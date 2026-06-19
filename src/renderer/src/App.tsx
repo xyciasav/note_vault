@@ -51,6 +51,7 @@ export default function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [newTagText, setNewTagText] = useState('');
 
   const selected = useMemo(() => {
     if (!selectedId) return null;
@@ -444,16 +445,68 @@ export default function App() {
               </span>
             </div>
 
-            <label className="field-label">
-              Tags <span className="muted-label">(comma separated)</span>
-            </label>
+    <label className="field-label">
+      Tags <span className="muted-label">(add tags one at a time)</span>
+    </label>
 
-            <input
-              className="tags-input"
-              value={draftTags}
-              onChange={e => setDraftTags(e.target.value)}
-              placeholder="theory, chords, scales, practice"
-            />
+    <div className="tag-editor">
+      {tagStringToArray(draftTags).map(tag => (
+        <span className="tag-chip-editable" key={tag}>
+          #{tag}
+          <button
+            type="button"
+            title={`Remove ${tag}`}
+            onClick={() => {
+              const nextTags = tagStringToArray(draftTags).filter(t => t !== tag);
+              setDraftTags(nextTags.join(', '));
+            }}
+          >
+            ×
+          </button>
+        </span>
+      ))}
+
+      {tagStringToArray(draftTags).length === 0 && (
+        <span className="muted-label">No tags yet.</span>
+      )}
+    </div>
+
+    <div className="tag-add-row">
+      <input
+        className="tags-input"
+        value={newTagText}
+        onChange={e => setNewTagText(e.target.value)}
+        placeholder="Add tag, like theory or scales"
+        onKeyDown={e => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+
+            const tag = newTagText.trim();
+            if (!tag) return;
+
+            const nextTags = [...new Set([...tagStringToArray(draftTags), tag])];
+
+            setDraftTags(nextTags.join(', '));
+            setNewTagText('');
+          }
+        }}
+      />
+
+      <button
+        type="button"
+        onClick={() => {
+          const tag = newTagText.trim();
+          if (!tag) return;
+
+          const nextTags = [...new Set([...tagStringToArray(draftTags), tag])];
+
+          setDraftTags(nextTags.join(', '));
+          setNewTagText('');
+        }}
+      >
+        Add Tag
+      </button>
+    </div>
 
             <label className="field-label">Notes</label>
 
