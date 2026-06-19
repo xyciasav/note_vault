@@ -1,0 +1,54 @@
+{
+  "name": "vault-notes",
+  "version": "0.1.0",
+  "description": "Local-first Windows notes and file vault with tags, search, and backups.",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:main\"",
+    "dev:renderer": "vite --config src/renderer/vite.config.ts",
+    "dev:main": "tsc -p tsconfig.electron.json --watch",
+    "start": "electron .",
+    "build": "npm run build:renderer && npm run build:main",
+    "build:renderer": "vite build --config src/renderer/vite.config.ts",
+    "build:main": "tsc -p tsconfig.electron.json",
+    "dist": "npm run build && electron-builder",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "adm-zip": "^0.5.17",
+    "better-sqlite3": "latest",
+    "clsx": "latest",
+    "electron-is-dev": "latest",
+    "lucide-react": "latest"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
+    "@types/better-sqlite3": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@types/uuid": "latest",
+    "concurrently": "latest",
+    "electron": "latest",
+    "electron-builder": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "typescript": "latest",
+    "vite": "latest"
+  },
+  "build": {
+    "appId": "com.local.vaultnotes",
+    "productName": "Vault Notes",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    }
+  }
+}
