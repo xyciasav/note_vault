@@ -111,9 +111,9 @@ function initDb() {
 
   db.exec(`
     INSERT OR IGNORE INTO item_collections (item_id, collection_id)
-    SELECT id, collection_id
+    SELECT items.id, items.collection_id
     FROM items
-    WHERE collection_id IS NOT NULL
+    JOIN collections ON collections.id = items.collection_id
   `);
 }
 
@@ -554,6 +554,7 @@ ipcMain.handle('collections:create', (_event, name: string) => {
 
 ipcMain.handle('collections:delete', (_event, id: string) => {
   db.prepare('DELETE FROM item_collections WHERE collection_id = ?').run(id);
+  db.prepare('UPDATE items SET collection_id = NULL WHERE collection_id = ?').run(id);
   db.prepare('DELETE FROM collections WHERE id = ?').run(id);
   return { ok: true };
 });
