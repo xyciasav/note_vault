@@ -20,7 +20,8 @@
     "better-sqlite3": "latest",
     "clsx": "latest",
     "electron-is-dev": "latest",
-    "lucide-react": "latest"
+    "lucide-react": "latest",
+    "pdf-parse": "^2.4.5"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.8",

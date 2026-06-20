@@ -945,3 +945,130 @@ body {
   background: #ccfbf1 !important;
   color: #115e59 !important;
 }
+
+.settings-panel {
+  padding: 44px;
+}
+
+.settings-section {
+  max-width: 760px;
+  margin-top: 28px;
+  padding: 28px;
+  background: #ffffff;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 16px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+}
+
+.settings-section h2 {
+  margin: 0 0 8px;
+  color: #0f172a;
+}
+
+.settings-section p {
+  color: #475569;
+  line-height: 1.6;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 24px 0;
+}
+
+.settings-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-note {
+  padding-top: 18px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 0.92rem;
+}
+
+.settings-control {
+  display: grid;
+  gap: 8px;
+  margin-top: 22px;
+  color: #334155;
+  font-weight: 700;
+}
+
+.settings-control select {
+  width: min(320px, 100%);
+}
+
+.backup-path {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #475569;
+  font-size: 0.84rem;
+  font-weight: 500;
+}
+
+.settings-control button {
+  justify-self: start;
+}
+
+.new-collection-form {
+  display: flex;
+  gap: 6px;
+}
+
+.new-collection-form input {
+  min-width: 0;
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #475569;
+  border-radius: 10px;
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+.new-collection-form button {
+  padding: 8px 10px;
+}
+
+.search-tag-checkbox-row {
+  width: 100%;
+  justify-content: flex-start !important;
+  text-align: left;
+}
+
+.search-tag-checkbox-row input {
+  flex: 0 0 auto;
+}
+
+.search-tag-checkbox-row span {
+  flex: 1;
+  text-align: left;
+}
+
+.search-filters .search-tag-checkbox-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+}
+
+.detail-toolbar-bottom {
+  margin-top: 32px;
+  padding-top: 18px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.title-input:disabled,
+.body-editor:disabled,
+.tags-input:disabled,
+.detail-panel select:disabled {
+  cursor: default;
+  opacity: 0.82;
+}

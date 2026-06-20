@@ -10,13 +10,15 @@ import {
   Download,
   RotateCcw,
   Trash2,
-  Save
+  Save,
+  Settings
 } from 'lucide-react';
 import './styles/app.css';
 import type { VaultItem } from './vaultApi';
 
 type TypeFilter = 'all' | 'note' | 'file';
-type AppView = 'library' | 'search';
+type AppView = 'library' | 'search' | 'settings';
+type BackupFrequency = 'on-close' | 'daily' | 'weekly' | 'never';
 
 function tagStringToArray(value: string) {
   return value
@@ -37,6 +39,8 @@ function formatDate(value: string) {
 export default function App() {
   const [items, setItems] = useState<VaultItem[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
+  const [collections, setCollections] = useState<{ id: string; name: string }[]>([]);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const [appView, setAppView] = useState<AppView>('library');
@@ -52,6 +56,7 @@ export default function App() {
   const [draftTitle, setDraftTitle] = useState('');
   const [draftBody, setDraftBody] = useState('');
   const [draftTags, setDraftTags] = useState('');
+  const [draftCollectionId, setDraftCollectionId] = useState<string>('');
 
   const [status, setStatus] = useState('');
   const [isDragging, setIsDragging] = useState(false);
@@ -59,6 +64,11 @@ export default function App() {
   const [isCreating, setIsCreating] = useState(false);
   const [newTagText, setNewTagText] = useState('');
   const [showSearchTagDropdown, setShowSearchTagDropdown] = useState(false);
+  const [newCollectionName, setNewCollectionName] = useState('');
+  const [showNewCollectionInput, setShowNewCollectionInput] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [backupDirectory, setBackupDirectory] = useState('');
+  const [backupFrequency, setBackupFrequency] = useState<BackupFrequency>('daily');
 
   const selected = useMemo(() => {
     if (!selectedId) return null;
@@ -68,17 +78,22 @@ export default function App() {
   async function refresh(overrides?: {
     search?: string;
     type?: TypeFilter;
+    collectionId?: string | null;
   }) {
     const loadedItems = await window.vaultApi.listItems({
       search: overrides?.search ?? search,
       tag: '',
-      type: overrides?.type ?? typeFilter
+      type: overrides?.type ?? typeFilter,
+      collectionId: overrides?.collectionId ?? selectedCollectionId ?? ''
     });
 
     setItems(loadedItems);
 
     const loadedTags = await window.vaultApi.listTags();
     setAllTags(loadedTags.map((tag: any) => tag.name));
+
+    const loadedCollections = await window.vaultApi.listCollections();
+    setCollections(loadedCollections);
 
     return loadedItems;
   }
@@ -134,6 +149,12 @@ export default function App() {
 
   useEffect(() => {
     refresh().catch(err => setStatus(err.message));
+    window.vaultApi.getBackupSettings()
+      .then(settings => {
+        setBackupDirectory(settings.backupDirectory);
+        setBackupFrequency(settings.backupFrequency);
+      })
+      .catch(err => setStatus(`Could not load backup settings: ${err.message}`));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -145,6 +166,11 @@ export default function App() {
     return () => window.clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, typeFilter]);
+
+  useEffect(() => {
+    refresh().catch(err => setStatus(err.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCollectionId]);
 
   useEffect(() => {
     if (appView !== 'search') return;
@@ -162,12 +188,15 @@ export default function App() {
       setDraftTitle(selected.title || '');
       setDraftBody(selected.body || '');
       setDraftTags((selected.tags || []).join(', '));
+      setDraftCollectionId(selected.collection_id || '');
+      setIsEditing(false);
     }
 
     if (!selectedId) {
       setDraftTitle('');
       setDraftBody('');
       setDraftTags('');
+      setDraftCollectionId('');
     }
   }, [selected, selectedId]);
 
@@ -179,7 +208,8 @@ export default function App() {
       const item = await window.vaultApi.createNote({
         title: 'Untitled note',
         body: '',
-        tags: []
+        tags: [],
+        collectionId: selectedCollectionId
       });
 
       if (!item) {
@@ -194,10 +224,13 @@ export default function App() {
       setDraftTitle(item.title || 'Untitled note');
       setDraftBody('');
       setDraftTags('');
+      setDraftCollectionId(selectedCollectionId || '');
+      setIsEditing(true);
 
       await refresh({
         search: '',
-        type: 'all'
+        type: 'all',
+        collectionId: selectedCollectionId
       });
 
       setSelectedId(item.id);
@@ -223,7 +256,8 @@ export default function App() {
         id: selectedId,
         title: draftTitle.trim() || 'Untitled note',
         body: draftBody,
-        tags: tagStringToArray(draftTags)
+        tags: tagStringToArray(draftTags),
+        collectionId: draftCollectionId || null
       });
 
       await refresh();
@@ -235,6 +269,7 @@ export default function App() {
       });
 
       setStatus(`Saved at ${time}.`);
+      setIsEditing(false);
     } catch (err: any) {
       setStatus(`Save failed: ${err.message}`);
     } finally {
@@ -268,6 +303,34 @@ export default function App() {
     setStatus('Deleted.');
   }
 
+  async function createCollection() {
+    if (!newCollectionName.trim()) return;
+
+    try {
+      const collection = await window.vaultApi.createCollection(newCollectionName);
+      await refresh();
+      setSelectedCollectionId(collection.id);
+      setNewCollectionName('');
+      setShowNewCollectionInput(false);
+      setStatus(`Collection created: ${collection.name}`);
+    } catch (err: any) {
+      setStatus(`Could not create collection: ${err.message}`);
+    }
+  }
+
+  function beginEditing() {
+    setIsEditing(true);
+  }
+
+  function cancelEditing() {
+    if (!selected) return;
+    setDraftTitle(selected.title || '');
+    setDraftBody(selected.body || '');
+    setDraftTags((selected.tags || []).join(', '));
+    setDraftCollectionId(selected.collection_id || '');
+    setIsEditing(false);
+  }
+
   async function uploadOne(file: File) {
     const sourcePath = window.vaultApi.getPathForFile(file);
 
@@ -279,12 +342,14 @@ export default function App() {
       sourcePath,
       title: file.name,
       body: '',
-      tags: []
+      tags: [],
+      collectionId: selectedCollectionId
     });
 
     setAppView('library');
     await refresh();
     setSelectedId(item.id);
+    setIsEditing(true);
     setStatus(`Uploaded ${file.name}.`);
   }
 
@@ -307,11 +372,46 @@ export default function App() {
     }
   }
 
-  async function exportBackup() {
+  async function exportVault() {
     const result = await window.vaultApi.exportBackup();
 
     if (!result.canceled) {
-      setStatus(`Backup exported: ${result.path}`);
+      setStatus(`Vault exported: ${result.path}`);
+    }
+  }
+
+  async function openBackupFolder() {
+    const result = await window.vaultApi.openBackupFolder();
+    setStatus(`Opened backup folder: ${result.path}`);
+  }
+
+  async function chooseBackupFolder() {
+    const result = await window.vaultApi.chooseBackupFolder();
+    if (!result.canceled && result.path) {
+      setBackupDirectory(result.path);
+      setStatus(`Backup folder changed: ${result.path}`);
+    }
+  }
+
+  async function changeBackupFrequency(frequency: BackupFrequency) {
+    const result = await window.vaultApi.setBackupFrequency(frequency);
+    setBackupFrequency(result.backupFrequency as BackupFrequency);
+    setStatus(`Automatic backups: ${frequency === 'never' ? 'off' : frequency}.`);
+  }
+
+  async function checkForUpdates() {
+    const result = await window.vaultApi.checkForUpdates();
+    if (!result.updateAvailable) setStatus('Vault Notes is up to date.');
+  }
+
+  async function reindexFiles() {
+    setStatus('Indexing file text...');
+    try {
+      const result = await window.vaultApi.reindexFiles();
+      await refresh();
+      setStatus(`Indexed ${result.indexed} file${result.indexed === 1 ? '' : 's'} for search.`);
+    } catch (err: any) {
+      setStatus(`Could not index files: ${err.message}`);
     }
   }
 
@@ -376,9 +476,16 @@ export default function App() {
           >
             <Search size={16} /> Search
           </button>
+
+          <button
+            className={appView === 'settings' ? 'active' : ''}
+            onClick={() => setAppView('settings')}
+          >
+            <Settings size={16} /> Settings
+          </button>
         </div>
 
-        <div className="side-section">
+        {appView === 'library' && <div className="side-section">
           <div className="side-label">Library Views</div>
 
           <button
@@ -410,17 +517,49 @@ export default function App() {
           >
             <FolderOpen size={16} /> Files
           </button>
-        </div>
+        </div>}
 
-        <div className="backup-box">
-          <button onClick={exportBackup}>
-            <Download size={16} /> Export Backup
+        {appView === 'library' && <div className="side-section">
+          <div className="side-label">Collections</div>
+
+          <button
+            className={selectedCollectionId === null ? 'active' : ''}
+            onClick={() => setSelectedCollectionId(null)}
+          >
+            All Collections
           </button>
 
-          <button onClick={importBackup}>
-            <RotateCcw size={16} /> Import Backup
-          </button>
-        </div>
+          {collections.map(collection => (
+            <button
+              key={collection.id}
+              className={selectedCollectionId === collection.id ? 'active' : ''}
+              onClick={() => setSelectedCollectionId(collection.id)}
+            >
+              <FolderOpen size={16} /> {collection.name}
+            </button>
+          ))}
+
+          {showNewCollectionInput ? (
+            <div className="new-collection-form">
+              <input
+                value={newCollectionName}
+                onChange={event => setNewCollectionName(event.target.value)}
+                placeholder="Collection name"
+                autoFocus
+                onKeyDown={event => {
+                  if (event.key === 'Enter') createCollection();
+                  if (event.key === 'Escape') setShowNewCollectionInput(false);
+                }}
+              />
+              <button onClick={createCollection}>Add</button>
+            </div>
+          ) : (
+            <button onClick={() => setShowNewCollectionInput(true)}>
+              <Plus size={16} /> New Collection
+            </button>
+          )}
+        </div>}
+
       </aside>
 
       {appView === 'library' ? (
@@ -481,12 +620,8 @@ export default function App() {
             ) : (
               <>
                 <div className="detail-toolbar">
-                  <button onClick={saveSelected} disabled={isSaving}>
-                    <Save size={16} /> {isSaving ? 'Saving...' : 'Save'}
-                  </button>
-
-                  <button onClick={toggleFavorite} disabled={!selected}>
-                    <Star size={16} /> {selected?.favorite ? 'Unstar' : 'Star'}
+                  <button onClick={beginEditing} disabled={isEditing}>
+                    {isEditing ? 'Editing' : 'Edit'}
                   </button>
 
                   {selected?.type === 'file' && (
@@ -494,10 +629,6 @@ export default function App() {
                       <FolderOpen size={16} /> Open File
                     </button>
                   )}
-
-                  <button className="danger" onClick={deleteSelected}>
-                    <Trash2 size={16} /> Delete
-                  </button>
                 </div>
 
                 <input
@@ -505,6 +636,7 @@ export default function App() {
                   value={draftTitle}
                   onChange={e => setDraftTitle(e.target.value)}
                   placeholder="Untitled note"
+                  disabled={!isEditing}
                 />
 
                 <div className="meta-line">
@@ -514,6 +646,18 @@ export default function App() {
                   </span>
                 </div>
 
+                <label className="field-label">Collection</label>
+                <select
+                  value={draftCollectionId}
+                  onChange={event => setDraftCollectionId(event.target.value)}
+                  disabled={!isEditing}
+                >
+                  <option value="">No collection</option>
+                  {collections.map(collection => (
+                    <option key={collection.id} value={collection.id}>{collection.name}</option>
+                  ))}
+                </select>
+
                 <label className="field-label">
                   Tags <span className="muted-label">(add tags one at a time)</span>
                 </label>
@@ -522,7 +666,7 @@ export default function App() {
                   {tagStringToArray(draftTags).map(tag => (
                     <span className="tag-chip-editable" key={tag}>
                       #{tag}
-                      <button
+                      {isEditing && <button
                         type="button"
                         title={`Remove ${tag}`}
                         onClick={() => {
@@ -531,7 +675,7 @@ export default function App() {
                         }}
                       >
                         ×
-                      </button>
+                      </button>}
                     </span>
                   ))}
 
@@ -544,6 +688,7 @@ export default function App() {
                   <input
                     className="tags-input"
                     value={newTagText}
+                    disabled={!isEditing}
                     onChange={e => setNewTagText(e.target.value)}
                     placeholder="Add tag, like theory or scales"
                     onKeyDown={e => {
@@ -563,6 +708,7 @@ export default function App() {
 
                   <button
                     type="button"
+                    disabled={!isEditing}
                     onClick={() => {
                       const tag = newTagText.trim();
                       if (!tag) return;
@@ -583,6 +729,7 @@ export default function App() {
                   className="body-editor"
                   value={draftBody}
                   onChange={e => setDraftBody(e.target.value)}
+                  disabled={!isEditing}
                   placeholder="Type lesson notes, theory reminders, chord progressions, song ideas, practice notes, links, or anything you want searchable..."
                 />
 
@@ -596,13 +743,32 @@ export default function App() {
                     </span>
                   </div>
                 )}
+
+                <div className="detail-toolbar detail-toolbar-bottom">
+                  {isEditing && (
+                    <>
+                      <button onClick={saveSelected} disabled={isSaving}>
+                        <Save size={16} /> {isSaving ? 'Saving...' : 'Save'}
+                      </button>
+                      <button onClick={cancelEditing}>Cancel</button>
+                    </>
+                  )}
+
+                  <button onClick={toggleFavorite} disabled={!selected}>
+                    <Star size={16} /> {selected?.favorite ? 'Unstar' : 'Star'}
+                  </button>
+
+                  <button className="danger" onClick={deleteSelected}>
+                    <Trash2 size={16} /> Delete
+                  </button>
+                </div>
               </>
             )}
 
             {status && <div className="status-bar">{status}</div>}
           </main>
         </>
-      ) : (
+      ) : appView === 'search' ? (
         <main className="search-panel">
           <div className="search-workspace-header">
             <div>
@@ -736,6 +902,83 @@ export default function App() {
               ))
             )}
           </div>
+
+          {status && <div className="status-bar">{status}</div>}
+        </main>
+      ) : (
+        <main className="search-panel settings-panel">
+          <div className="search-workspace-header">
+            <div>
+              <h1>Settings</h1>
+              <p>Manage your vault data and its automatic backups.</p>
+            </div>
+          </div>
+
+          <section className="settings-section">
+            <h2>Backup & Export</h2>
+            <p>
+              Export creates a normal ZIP with Markdown notes, your original files, and an
+              <code> index.html </code> page. You can open it without Vault Notes.
+            </p>
+
+            <div className="settings-actions">
+              <button onClick={exportVault}>
+                <Download size={16} /> Export Vault
+              </button>
+              <button onClick={importBackup}>
+                <RotateCcw size={16} /> Import Backup
+              </button>
+              <button onClick={openBackupFolder}>
+                <FolderOpen size={16} /> Open Backup Folder
+              </button>
+            </div>
+
+            <p className="settings-note">
+              Importing a backup replaces the current local vault.
+            </p>
+
+            <div className="settings-control">
+              <label htmlFor="backup-frequency">Automatic backups</label>
+              <select
+                id="backup-frequency"
+                value={backupFrequency}
+                onChange={event => changeBackupFrequency(event.target.value as BackupFrequency)}
+              >
+                <option value="on-close">Every time the app closes</option>
+                <option value="daily">Once per day</option>
+                <option value="weekly">Once per week</option>
+                <option value="never">Off</option>
+              </select>
+            </div>
+
+            <div className="settings-control">
+              <span>Backup folder</span>
+              <code className="backup-path">{backupDirectory || 'Loading…'}</code>
+              <button onClick={chooseBackupFolder}>Choose Backup Folder</button>
+            </div>
+          </section>
+
+          <section className="settings-section">
+            <h2>Updates</h2>
+            <p>
+              Vault Notes checks GitHub Releases when it opens. When a newer version is available,
+              you can open its download page, skip that version, or decide later.
+            </p>
+            <div className="settings-actions">
+              <button onClick={checkForUpdates}>Check for Updates</button>
+            </div>
+          </section>
+
+          <section className="settings-section">
+            <h2>Searchable files</h2>
+            <p>
+              Vault Notes indexes TXT, Markdown, CSV, JSON, LOG, and text-based PDF files so
+              their contents can appear in search. Re-index after adding this feature to an existing vault.
+            </p>
+            <div className="settings-actions">
+              <button onClick={reindexFiles}>Re-index Files</button>
+            </div>
+          </section>
 
           {status && <div className="status-bar">{status}</div>}
         </main>

@@ -9,13 +9,18 @@ Everything stays on the computer running the app: notes, uploaded files, tags, a
 - Create, edit, save, favorite, and delete plain-text notes.
 - Upload files with the file picker or drag them directly into the app.
 - Add reusable tags to notes and files.
+- Group related notes and files into collections or projects.
 - Browse all items or filter the library by notes and files.
+- Open items in a read-only view and enter Edit mode only when changes are needed.
 - Quickly filter the current library by title, content, filename, tags, and extracted text.
 - Use the dedicated search view to combine text, item-type, and multi-tag filters.
 - Open an uploaded file in its default desktop application.
-- Search the contents of uploaded `.txt`, `.md`, `.csv`, `.json`, and `.log` files (up to 2 MB per file).
-- Export the entire vault to a portable `.vaultbackup` archive, including files and metadata.
-- Import a backup to restore a vault on the same or another Windows machine.
+- Search the contents of uploaded `.txt`, `.md`, `.csv`, `.json`, `.log`, and text-based PDF files.
+- Export a human-readable ZIP with Markdown notes, the original attached files, and a browsable `index.html`.
+- Import an automatic backup to restore a vault on the same or another Windows machine.
+- Keep a restore-ready automatic backup in the local backup folder once per day.
+- Choose the backup folder and schedule automatic backups on close, daily, weekly, or not at all.
+- Check GitHub Releases at launch and open the new-version download page when an update is available.
 
 ## Built with
 
@@ -78,18 +83,20 @@ The database is named `vault-notes.sqlite`; uploaded files are copied to a `file
 
 ## Backups
 
-Use **Export Backup** in the app to create a `.vaultbackup` ZIP archive. Each archive contains:
+Use **Export Vault** in Settings to create a normal ZIP named `Music Notes Vault Export`. Inside are Markdown files in `Notes`, original uploaded files in `Files`, and an `index.html` that opens in any browser. This export remains useful even without Vault Notes.
 
-- item records and tag relationships as JSON
-- metadata for attached files
-- copies of every uploaded file
+In Settings, choose where automatic restore-ready `.vaultbackup` files are saved and set their schedule: every time the app closes, daily, weekly, or off. Use **Open Backup Folder** to see them.
 
 Use **Import Backup** to restore an archive. Import replaces the current local vault, including its existing items and uploaded files, so export a backup before importing if you need to preserve the current state.
+
+## Updates
+
+At launch, Vault Notes checks the [GitHub Releases page](https://github.com/xyciasav/note_vault/releases) for a newer version. If one is available, you can open its download page, skip that version, or decide later. You can also run the same check from Settings.
 
 ## Current limitations
 
 - The app is Windows-focused and only packages a Windows installer.
-- File-content search currently supports text-based `.txt`, `.md`, `.csv`, `.json`, and `.log` files; PDF and DOCX text extraction are not included yet.
+- File-content search supports text-based `.txt`, `.md`, `.csv`, `.json`, `.log`, and PDF files. Scanned image-only PDFs and DOCX files are not indexed yet.
 - Notes use a plain-text editor.
 - Backup import replaces the existing vault and does not offer a preview or merge option.
 
