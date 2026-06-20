@@ -552,6 +552,12 @@ ipcMain.handle('collections:create', (_event, name: string) => {
   return collection;
 });
 
+ipcMain.handle('collections:delete', (_event, id: string) => {
+  db.prepare('DELETE FROM item_collections WHERE collection_id = ?').run(id);
+  db.prepare('DELETE FROM collections WHERE id = ?').run(id);
+  return { ok: true };
+});
+
 ipcMain.handle('items:createNote', (_event, args: { title: string; body?: string; tags?: string[] | string; collectionIds?: string[] }) => {
   const id = randomUUID();
   const ts = nowIso();

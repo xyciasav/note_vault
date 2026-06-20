@@ -323,6 +323,19 @@ export default function App() {
     }
   }
 
+  async function deleteCollection() {
+    if (!activeCollection) return;
+    const confirmed = confirm(
+      `Delete the collection "${activeCollection.name}"? Its notes and files will remain in your vault.`
+    );
+    if (!confirmed) return;
+
+    await window.vaultApi.deleteCollection(activeCollection.id);
+    setSelectedCollectionId(null);
+    await refresh();
+    setStatus(`Collection deleted: ${activeCollection.name}`);
+  }
+
   function beginEditing() {
     setIsEditing(true);
   }
@@ -560,6 +573,9 @@ export default function App() {
                 onChange={event => setNewCollectionName(event.target.value)}
                 placeholder="Collection name"
                 autoFocus
+                onBlur={() => {
+                  if (!newCollectionName.trim()) setShowNewCollectionInput(false);
+                }}
                 onKeyDown={event => {
                   if (event.key === 'Enter') createCollection();
                   if (event.key === 'Escape') setShowNewCollectionInput(false);
@@ -570,6 +586,12 @@ export default function App() {
           ) : (
             <button onClick={() => setShowNewCollectionInput(true)}>
               <Plus size={16} /> New Collection
+            </button>
+          )}
+
+          {activeCollection && (
+            <button className="danger" onClick={deleteCollection}>
+              <Trash2 size={16} /> Delete Collection
             </button>
           )}
         </div>}
