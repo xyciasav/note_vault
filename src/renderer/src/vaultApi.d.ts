@@ -9,6 +9,8 @@ export type VaultItem = {
   extracted_text?: string;
   favorite: boolean;
   collection_id?: string | null;
+  collection_ids: string[];
+  collections: { id: string; name: string }[];
   created_at: string;
   updated_at: string;
   tags: string[];
@@ -23,10 +25,10 @@ declare global {
       listTags: () => Promise<{ name: string }[]>;
       listCollections: () => Promise<{ id: string; name: string; created_at: string }[]>;
       createCollection: (name: string) => Promise<{ id: string; name: string; created_at: string }>;
-      createNote: (args: { title: string; body?: string; tags?: string[] | string; collectionId?: string | null }) => Promise<VaultItem>;
-      updateItem: (args: { id: string; title?: string; body?: string; tags?: string[] | string; favorite?: boolean; collectionId?: string | null }) => Promise<VaultItem>;
+      createNote: (args: { title: string; body?: string; tags?: string[] | string; collectionIds?: string[] }) => Promise<VaultItem>;
+      updateItem: (args: { id: string; title?: string; body?: string; tags?: string[] | string; favorite?: boolean; collectionIds?: string[] }) => Promise<VaultItem>;
       deleteItem: (id: string) => Promise<{ ok: boolean }>;
-      uploadFile: (args: { sourcePath: string; title?: string; body?: string; tags?: string[] | string; collectionId?: string | null }) => Promise<VaultItem>;
+      uploadFile: (args: { sourcePath: string; title?: string; body?: string; tags?: string[] | string; collectionIds?: string[] }) => Promise<VaultItem>;
       openFile: (id: string) => Promise<{ ok: boolean }>;
       reindexFiles: () => Promise<{ indexed: number }>;
       exportBackup: () => Promise<{ canceled: boolean; path?: string }>;

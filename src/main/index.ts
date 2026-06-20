@@ -93,6 +93,14 @@ function initDb() {
       name TEXT NOT NULL UNIQUE COLLATE NOCASE,
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS item_collections (
+      item_id TEXT NOT NULL,
+      collection_id TEXT NOT NULL,
+      PRIMARY KEY (item_id, collection_id),
+      FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
+      FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
+    );
   `);
 
   try {
@@ -100,6 +108,13 @@ function initDb() {
   } catch {
     // Existing databases already have this column after the first migration.
   }
+
+  db.exec(`
+    INSERT OR IGNORE INTO item_collections (item_id, collection_id)
+    SELECT id, collection_id
+    FROM items
+    WHERE collection_id IS NOT NULL
+  `);
 }
 
 function nowIso() {
@@ -182,6 +197,18 @@ function cleanupUnusedTags() {
   `).run();
 }
 
+function setCollectionsForItem(itemId: string, collectionIds: string[] | undefined) {
+  if (collectionIds === undefined) return;
+  const ids = [...new Set(collectionIds.filter(Boolean))];
+  const clear = db.prepare('DELETE FROM item_collections WHERE item_id = ?');
+  const link = db.prepare('INSERT OR IGNORE INTO item_collections (item_id, collection_id) VALUES (?, ?)');
+
+  db.transaction(() => {
+    clear.run(itemId);
+    for (const collectionId of ids) link.run(itemId, collectionId);
+  })();
+}
+
 function rowToItem(row: any) {
   const tagRows = db.prepare(`
     SELECT tags.name FROM tags
@@ -189,11 +216,20 @@ function rowToItem(row: any) {
     WHERE item_tags.item_id = ?
     ORDER BY tags.name
   `).all(row.id) as { name: string }[];
+  const collectionRows = db.prepare(`
+    SELECT collections.id, collections.name
+    FROM collections
+    JOIN item_collections ON item_collections.collection_id = collections.id
+    WHERE item_collections.item_id = ?
+    ORDER BY collections.name
+  `).all(row.id) as { id: string; name: string }[];
 
   return {
     ...row,
     favorite: Boolean(row.favorite),
     tags: tagRows.map(t => t.name),
+    collection_ids: collectionRows.map(collection => collection.id),
+    collections: collectionRows,
     file_path: row.file_stored_name ? path.join(filesDir, row.file_stored_name) : null
   };
 }
@@ -228,6 +264,7 @@ function createRestoreBackup(targetPath: string) {
   const tags = db.prepare('SELECT * FROM tags ORDER BY name').all();
   const itemTags = db.prepare('SELECT * FROM item_tags').all();
   const collections = db.prepare('SELECT * FROM collections ORDER BY name').all();
+  const itemCollections = db.prepare('SELECT * FROM item_collections').all();
   const backup = {
     app: 'Vault Notes',
     version: 1,
@@ -235,7 +272,8 @@ function createRestoreBackup(targetPath: string) {
     items,
     tags,
     item_tags: itemTags,
-    collections
+    collections,
+    item_collections: itemCollections
   };
 
   const zip = new AdmZip();
@@ -474,7 +512,7 @@ ipcMain.handle('items:list', (_event, args: { search?: string; tag?: string; typ
   let items = rows.map(rowToItem);
 
   if (type && type !== 'all') items = items.filter(item => item.type === type);
-  if (collectionId) items = items.filter(item => item.collection_id === collectionId);
+  if (collectionId) items = items.filter(item => item.collection_ids.includes(collectionId));
   if (tag) items = items.filter(item => item.tags.some((t: string) => t.toLowerCase() === tag.toLowerCase()));
   if (search) {
     items = items.filter(item => {
@@ -514,35 +552,36 @@ ipcMain.handle('collections:create', (_event, name: string) => {
   return collection;
 });
 
-ipcMain.handle('items:createNote', (_event, args: { title: string; body?: string; tags?: string[] | string; collectionId?: string | null }) => {
+ipcMain.handle('items:createNote', (_event, args: { title: string; body?: string; tags?: string[] | string; collectionIds?: string[] }) => {
   const id = randomUUID();
   const ts = nowIso();
   db.prepare(`
-    INSERT INTO items (id, title, type, body, collection_id, created_at, updated_at)
-    VALUES (?, ?, 'note', ?, ?, ?, ?)
-  `).run(id, args.title || 'Untitled note', args.body || '', args.collectionId || null, ts, ts);
+    INSERT INTO items (id, title, type, body, created_at, updated_at)
+    VALUES (?, ?, 'note', ?, ?, ?)
+  `).run(id, args.title || 'Untitled note', args.body || '', ts, ts);
   setTagsForItem(id, args.tags);
+  setCollectionsForItem(id, args.collectionIds);
   return getItem(id);
 });
 
-ipcMain.handle('items:update', (_event, args: { id: string; title?: string; body?: string; tags?: string[] | string; favorite?: boolean; collectionId?: string | null }) => {
+ipcMain.handle('items:update', (_event, args: { id: string; title?: string; body?: string; tags?: string[] | string; favorite?: boolean; collectionIds?: string[] }) => {
   const existing = getItem(args.id);
   if (!existing) throw new Error('Item not found');
 
   db.prepare(`
     UPDATE items
-    SET title = ?, body = ?, favorite = ?, collection_id = ?, updated_at = ?
+    SET title = ?, body = ?, favorite = ?, updated_at = ?
     WHERE id = ?
   `).run(
     args.title ?? existing.title,
     args.body ?? existing.body,
     args.favorite === undefined ? Number(existing.favorite) : Number(args.favorite),
-    args.collectionId === undefined ? existing.collection_id : args.collectionId,
     nowIso(),
     args.id
   );
 
   if (args.tags !== undefined) setTagsForItem(args.id, args.tags);
+  setCollectionsForItem(args.id, args.collectionIds);
   return getItem(args.id);
 });
 
@@ -558,7 +597,7 @@ ipcMain.handle('items:delete', (_event, id: string) => {
   return { ok: true };
 });
 
-ipcMain.handle('items:uploadFile', async (_event, args: { sourcePath: string; title?: string; body?: string; tags?: string[] | string; collectionId?: string | null }) => {
+ipcMain.handle('items:uploadFile', async (_event, args: { sourcePath: string; title?: string; body?: string; tags?: string[] | string; collectionIds?: string[] }) => {
   if (!args.sourcePath || !fs.existsSync(args.sourcePath)) throw new Error('File does not exist');
 
   const originalName = path.basename(args.sourcePath);
@@ -572,11 +611,12 @@ ipcMain.handle('items:uploadFile', async (_event, args: { sourcePath: string; ti
   const extracted = await extractText(dest, ext);
 
   db.prepare(`
-    INSERT INTO items (id, title, type, body, file_name, file_stored_name, file_ext, extracted_text, collection_id, created_at, updated_at)
-    VALUES (?, ?, 'file', ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, args.title || originalName, args.body || '', originalName, storedName, ext, extracted, args.collectionId || null, ts, ts);
+    INSERT INTO items (id, title, type, body, file_name, file_stored_name, file_ext, extracted_text, created_at, updated_at)
+    VALUES (?, ?, 'file', ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, args.title || originalName, args.body || '', originalName, storedName, ext, extracted, ts, ts);
 
   setTagsForItem(id, args.tags);
+  setCollectionsForItem(id, args.collectionIds);
   return getItem(id);
 });
 
@@ -678,6 +718,7 @@ ipcMain.handle('backup:import', async () => {
   }
 
   const trx = db.transaction(() => {
+    db.prepare('DELETE FROM item_collections').run();
     db.prepare('DELETE FROM item_tags').run();
     db.prepare('DELETE FROM tags').run();
     db.prepare('DELETE FROM items').run();
@@ -733,6 +774,11 @@ ipcMain.handle('backup:import', async () => {
       VALUES (@id, @name, @created_at)
     `);
 
+    const insertItemCollection = db.prepare(`
+      INSERT INTO item_collections (item_id, collection_id)
+      VALUES (@item_id, @collection_id)
+    `);
+
     for (const collection of backup.collections || []) {
       insertCollection.run(collection);
     }
@@ -747,6 +793,13 @@ ipcMain.handle('backup:import', async () => {
 
     for (const itemTag of backup.item_tags) {
       insertItemTag.run(itemTag);
+    }
+
+    const collectionLinks = backup.item_collections || backup.items
+      .filter((item: any) => item.collection_id)
+      .map((item: any) => ({ item_id: item.id, collection_id: item.collection_id }));
+    for (const itemCollection of collectionLinks) {
+      insertItemCollection.run(itemCollection);
     }
   });
 

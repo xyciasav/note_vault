@@ -1065,6 +1065,27 @@ body {
   border-top: 1px solid #e2e8f0;
 }
 
+.collection-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.collection-picker label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  color: #334155;
+  cursor: pointer;
+}
+
+.collection-picker input {
+  accent-color: #2563eb;
+}
+
 .title-input:disabled,
 .body-editor:disabled,
 .tags-input:disabled,

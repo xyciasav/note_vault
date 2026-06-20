@@ -56,7 +56,7 @@ export default function App() {
   const [draftTitle, setDraftTitle] = useState('');
   const [draftBody, setDraftBody] = useState('');
   const [draftTags, setDraftTags] = useState('');
-  const [draftCollectionId, setDraftCollectionId] = useState<string>('');
+  const [draftCollectionIds, setDraftCollectionIds] = useState<string[]>([]);
 
   const [status, setStatus] = useState('');
   const [isDragging, setIsDragging] = useState(false);
@@ -74,6 +74,11 @@ export default function App() {
     if (!selectedId) return null;
     return items.find(i => i.id === selectedId) || null;
   }, [items, selectedId]);
+
+  const activeCollection = useMemo(
+    () => collections.find(collection => collection.id === selectedCollectionId) || null,
+    [collections, selectedCollectionId]
+  );
 
   async function refresh(overrides?: {
     search?: string;
@@ -188,7 +193,7 @@ export default function App() {
       setDraftTitle(selected.title || '');
       setDraftBody(selected.body || '');
       setDraftTags((selected.tags || []).join(', '));
-      setDraftCollectionId(selected.collection_id || '');
+      setDraftCollectionIds(selected.collection_ids || []);
       setIsEditing(false);
     }
 
@@ -196,7 +201,7 @@ export default function App() {
       setDraftTitle('');
       setDraftBody('');
       setDraftTags('');
-      setDraftCollectionId('');
+      setDraftCollectionIds([]);
     }
   }, [selected, selectedId]);
 
@@ -209,7 +214,7 @@ export default function App() {
         title: 'Untitled note',
         body: '',
         tags: [],
-        collectionId: selectedCollectionId
+        collectionIds: selectedCollectionId ? [selectedCollectionId] : []
       });
 
       if (!item) {
@@ -224,7 +229,7 @@ export default function App() {
       setDraftTitle(item.title || 'Untitled note');
       setDraftBody('');
       setDraftTags('');
-      setDraftCollectionId(selectedCollectionId || '');
+      setDraftCollectionIds(selectedCollectionId ? [selectedCollectionId] : []);
       setIsEditing(true);
 
       await refresh({
@@ -257,7 +262,7 @@ export default function App() {
         title: draftTitle.trim() || 'Untitled note',
         body: draftBody,
         tags: tagStringToArray(draftTags),
-        collectionId: draftCollectionId || null
+        collectionIds: draftCollectionIds
       });
 
       await refresh();
@@ -327,7 +332,7 @@ export default function App() {
     setDraftTitle(selected.title || '');
     setDraftBody(selected.body || '');
     setDraftTags((selected.tags || []).join(', '));
-    setDraftCollectionId(selected.collection_id || '');
+    setDraftCollectionIds(selected.collection_ids || []);
     setIsEditing(false);
   }
 
@@ -343,7 +348,7 @@ export default function App() {
       title: file.name,
       body: '',
       tags: [],
-      collectionId: selectedCollectionId
+      collectionIds: selectedCollectionId ? [selectedCollectionId] : []
     });
 
     setAppView('library');
@@ -357,8 +362,13 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    await uploadOne(file);
-    e.target.value = '';
+    try {
+      await uploadOne(file);
+    } catch (err: any) {
+      setStatus(`Upload failed: ${err.message}`);
+    } finally {
+      e.target.value = '';
+    }
   }
 
   async function onDrop(e: React.DragEvent<HTMLDivElement>) {
@@ -367,8 +377,12 @@ export default function App() {
 
     const files = Array.from(e.dataTransfer.files);
 
-    for (const file of files) {
-      await uploadOne(file);
+    try {
+      for (const file of files) {
+        await uploadOne(file);
+      }
+    } catch (err: any) {
+      setStatus(`Upload failed: ${err.message}`);
     }
   }
 
@@ -575,6 +589,7 @@ export default function App() {
             </div>
 
             <div className="result-count">
+              {activeCollection ? `${activeCollection.name}: ` : ''}
               {items.length} item{items.length === 1 ? '' : 's'}
             </div>
 
@@ -647,16 +662,26 @@ export default function App() {
                 </div>
 
                 <label className="field-label">Collection</label>
-                <select
-                  value={draftCollectionId}
-                  onChange={event => setDraftCollectionId(event.target.value)}
-                  disabled={!isEditing}
-                >
-                  <option value="">No collection</option>
-                  {collections.map(collection => (
-                    <option key={collection.id} value={collection.id}>{collection.name}</option>
+                <div className="collection-picker">
+                  {collections.length === 0 ? (
+                    <span className="muted-label">Create a collection from the sidebar to group this item.</span>
+                  ) : collections.map(collection => (
+                    <label key={collection.id}>
+                      <input
+                        type="checkbox"
+                        checked={draftCollectionIds.includes(collection.id)}
+                        disabled={!isEditing}
+                        onChange={() => setDraftCollectionIds(current =>
+                          current.includes(collection.id)
+                            ? current.filter(id => id !== collection.id)
+                            : [...current, collection.id]
+                        )}
+                      />
+                      {collection.name}
+                    </label>
                   ))}
-                </select>
+                </div>
+                <div className="muted-label">An item can belong to more than one project.</div>
 
                 <label className="field-label">
                   Tags <span className="muted-label">(add tags one at a time)</span>
