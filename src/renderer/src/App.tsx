@@ -567,15 +567,19 @@ export default function App() {
           ))}
 
           {showNewCollectionInput ? (
-            <div className="new-collection-form">
+            <div
+              className="new-collection-form"
+              onBlur={event => {
+                if (!event.currentTarget.contains(event.relatedTarget) && !newCollectionName.trim()) {
+                  setShowNewCollectionInput(false);
+                }
+              }}
+            >
               <input
                 value={newCollectionName}
                 onChange={event => setNewCollectionName(event.target.value)}
                 placeholder="Collection name"
                 autoFocus
-                onBlur={() => {
-                  if (!newCollectionName.trim()) setShowNewCollectionInput(false);
-                }}
                 onKeyDown={event => {
                   if (event.key === 'Enter') createCollection();
                   if (event.key === 'Escape') setShowNewCollectionInput(false);
