@@ -131,8 +131,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
-    minWidth: 980,
-    minHeight: 650,
+    minWidth: 760,
+    minHeight: 560,
     title: 'Vault Notes',
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
