@@ -1075,6 +1075,7 @@ body {
 .theme-dark .search-tag-dropdown-button,
 .theme-dark .search-tag-dropdown-panel,
 .theme-dark .backup-path { background: #0b1220 !important; color: #e2e8f0 !important; border-color: #334155 !important; }
+.theme-dark .title-input { color: #ffffff !important; border-bottom-color: #475569 !important; }
 
 .new-collection-form {
   display: flex;

@@ -67,6 +67,7 @@ function initDb() {
       body TEXT DEFAULT '',
       file_name TEXT,
       file_stored_name TEXT,
+      file_source_path TEXT,
       file_ext TEXT,
       extracted_text TEXT DEFAULT '',
       favorite INTEGER DEFAULT 0,
@@ -105,6 +106,12 @@ function initDb() {
 
   try {
     db.exec('ALTER TABLE items ADD COLUMN collection_id TEXT');
+  } catch {
+    // Existing databases already have this column after the first migration.
+  }
+
+  try {
+    db.exec('ALTER TABLE items ADD COLUMN file_source_path TEXT');
   } catch {
     // Existing databases already have this column after the first migration.
   }
@@ -230,7 +237,7 @@ function rowToItem(row: any) {
     tags: tagRows.map(t => t.name),
     collection_ids: collectionRows.map(collection => collection.id),
     collections: collectionRows,
-    file_path: row.file_stored_name ? path.join(filesDir, row.file_stored_name) : null
+    file_path: row.file_source_path || (row.file_stored_name ? path.join(filesDir, row.file_stored_name) : null)
   };
 }
 
@@ -431,8 +438,7 @@ function createReadableExport(targetPath: string) {
       continue;
     }
 
-    if (!item.file_stored_name) continue;
-    const sourcePath = path.join(filesDir, item.file_stored_name);
+    const sourcePath = item.file_source_path || (item.file_stored_name ? path.join(filesDir, item.file_stored_name) : '');
     if (!fs.existsSync(sourcePath)) continue;
     const fileName = uniqueFileName(safeFileName(item.file_name || item.title || 'Uploaded file', 'Uploaded file'), usedFileNames);
     zip.addLocalFile(sourcePath, `${root}/Files`, fileName);
@@ -627,25 +633,65 @@ ipcMain.handle('items:uploadFile', async (_event, args: { sourcePath: string; ti
   return getItem(id);
 });
 
+function listFolderFiles(folderPath: string, result: string[] = []) {
+  for (const entry of fs.readdirSync(folderPath, { withFileTypes: true })) {
+    const fullPath = path.join(folderPath, entry.name);
+    if (entry.isDirectory()) listFolderFiles(fullPath, result);
+    else if (entry.isFile()) result.push(fullPath);
+  }
+  return result;
+}
+
+ipcMain.handle('items:linkFolder', async (_event, collectionIds: string[] = []) => {
+  const result = await dialog.showOpenDialog(mainWindow!, {
+    title: 'Link a Folder',
+    properties: ['openDirectory']
+  });
+  if (result.canceled || !result.filePaths[0]) return { canceled: true, linked: 0 };
+
+  const folderPath = result.filePaths[0];
+  const folderName = path.basename(folderPath);
+  const files = listFolderFiles(folderPath).slice(0, 2000);
+  const insert = db.prepare(`
+    INSERT INTO items (id, title, type, body, file_name, file_source_path, file_ext, extracted_text, created_at, updated_at)
+    VALUES (?, ?, 'file', ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  let linked = 0;
+  for (const sourcePath of files) {
+    const ext = path.extname(sourcePath).toLowerCase();
+    const ts = nowIso();
+    const id = randomUUID();
+    const title = path.relative(folderPath, sourcePath);
+    const extracted = await extractText(sourcePath, ext);
+    insert.run(id, title, '', path.basename(sourcePath), sourcePath, ext, extracted, ts, ts);
+    setTagsForItem(id, [folderName]);
+    setCollectionsForItem(id, collectionIds);
+    linked += 1;
+  }
+
+  return { canceled: false, linked, folderPath, folderName };
+});
+
 ipcMain.handle('items:openFile', async (_event, id: string) => {
   const item = getItem(id);
-  if (!item || !item.file_stored_name) throw new Error('File item not found');
-  const target = path.join(filesDir, item.file_stored_name);
+  if (!item || (!item.file_stored_name && !item.file_source_path)) throw new Error('File item not found');
+  const target = item.file_source_path || path.join(filesDir, item.file_stored_name);
   await shell.openPath(target);
   return { ok: true };
 });
 
 ipcMain.handle('items:reindexFiles', async () => {
   const fileItems = db.prepare(`
-    SELECT id, file_stored_name, file_ext
+    SELECT id, file_stored_name, file_source_path, file_ext
     FROM items
-    WHERE type = 'file' AND file_stored_name IS NOT NULL
-  `).all() as { id: string; file_stored_name: string; file_ext: string }[];
+    WHERE type = 'file' AND (file_stored_name IS NOT NULL OR file_source_path IS NOT NULL)
+  `).all() as { id: string; file_stored_name?: string; file_source_path?: string; file_ext: string }[];
   const update = db.prepare('UPDATE items SET extracted_text = ?, updated_at = ? WHERE id = ?');
 
   let indexed = 0;
   for (const item of fileItems) {
-    const sourcePath = path.join(filesDir, item.file_stored_name);
+    const sourcePath = item.file_source_path || (item.file_stored_name ? path.join(filesDir, item.file_stored_name) : '');
     if (!fs.existsSync(sourcePath)) continue;
     const extracted = await extractText(sourcePath, item.file_ext || path.extname(sourcePath));
     update.run(extracted, nowIso(), item.id);
@@ -743,6 +789,7 @@ ipcMain.handle('backup:import', async () => {
         body,
         file_name,
         file_stored_name,
+        file_source_path,
         file_ext,
         extracted_text,
         favorite,
@@ -757,6 +804,7 @@ ipcMain.handle('backup:import', async () => {
         @body,
         @file_name,
         @file_stored_name,
+        @file_source_path,
         @file_ext,
         @extracted_text,
         @favorite,
@@ -791,7 +839,7 @@ ipcMain.handle('backup:import', async () => {
     }
 
     for (const item of backup.items) {
-      insertItem.run({ collection_id: null, ...item });
+      insertItem.run({ collection_id: null, file_source_path: null, ...item });
     }
 
     for (const tag of backup.tags) {

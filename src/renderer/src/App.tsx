@@ -69,7 +69,7 @@ export default function App() {
   const [isEditing, setIsEditing] = useState(false);
   const [backupDirectory, setBackupDirectory] = useState('');
   const [backupFrequency, setBackupFrequency] = useState<BackupFrequency>('daily');
-  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('vault-notes-theme') === 'dark');
+  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('vault-notes-theme') !== 'light');
 
   const selected = useMemo(() => {
     if (!selectedId) return null;
@@ -354,7 +354,7 @@ export default function App() {
     setIsEditing(false);
   }
 
-  async function uploadOne(file: File) {
+  async function uploadOne(file: File, refreshAfter = true) {
     const sourcePath = window.vaultApi.getPathForFile(file);
 
     if (!sourcePath) {
@@ -369,23 +369,47 @@ export default function App() {
       collectionIds: selectedCollectionId ? [selectedCollectionId] : []
     });
 
-    setAppView('library');
-    await refresh();
-    setSelectedId(item.id);
-    setIsEditing(true);
-    setStatus(`Uploaded ${file.name}.`);
+    if (refreshAfter) {
+      setAppView('library');
+      await refresh();
+      setSelectedId(item.id);
+      setIsEditing(true);
+      setStatus(`Uploaded ${file.name}.`);
+    }
+    return item;
   }
 
   async function onFileInput(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
     try {
-      await uploadOne(file);
+      let lastItem: VaultItem | undefined;
+      for (let index = 0; index < files.length; index += 1) {
+        setStatus(`Uploading ${index + 1} of ${files.length}: ${files[index].name}`);
+        lastItem = await uploadOne(files[index], false);
+      }
+      setAppView('library');
+      await refresh();
+      if (lastItem) setSelectedId(lastItem.id);
+      setStatus(`Uploaded ${files.length} file${files.length === 1 ? '' : 's'}.`);
     } catch (err: any) {
       setStatus(`Upload failed: ${err.message}`);
     } finally {
       e.target.value = '';
+    }
+  }
+
+  async function linkFolder() {
+    try {
+      setStatus('Choose a folder to link...');
+      const result = await window.vaultApi.linkFolder(selectedCollectionId ? [selectedCollectionId] : []);
+      if (!result.canceled) {
+        await refresh();
+        setStatus(`Linked ${result.linked} files from ${result.folderName}.`);
+      }
+    } catch (err: any) {
+      setStatus(`Could not link folder: ${err.message}`);
     }
   }
 
@@ -488,9 +512,18 @@ export default function App() {
         </button>
 
         <label className="upload-button">
-          <Upload size={18} /> Upload File
-          <input type="file" onChange={onFileInput} />
+          <Upload size={18} /> Upload Files
+          <input type="file" multiple onChange={onFileInput} />
         </label>
+
+        <label className="upload-button">
+          <FolderOpen size={18} /> Add Folder
+          <input type="file" multiple onChange={onFileInput} {...({ webkitdirectory: '', directory: '' } as any)} />
+        </label>
+
+        <button className="secondary-action" onClick={linkFolder}>
+          <FolderOpen size={18} /> Link Folder
+        </button>
 
         <div className="side-section">
           <div className="side-label">Workspace</div>

@@ -5,6 +5,7 @@ export type VaultItem = {
   body: string;
   file_name?: string | null;
   file_stored_name?: string | null;
+  file_source_path?: string | null;
   file_ext?: string | null;
   extracted_text?: string;
   favorite: boolean;
@@ -30,6 +31,7 @@ declare global {
       updateItem: (args: { id: string; title?: string; body?: string; tags?: string[] | string; favorite?: boolean; collectionIds?: string[] }) => Promise<VaultItem>;
       deleteItem: (id: string) => Promise<{ ok: boolean }>;
       uploadFile: (args: { sourcePath: string; title?: string; body?: string; tags?: string[] | string; collectionIds?: string[] }) => Promise<VaultItem>;
+      linkFolder: (collectionIds?: string[]) => Promise<{ canceled: boolean; linked: number; folderPath?: string; folderName?: string }>;
       openFile: (id: string) => Promise<{ ok: boolean }>;
       reindexFiles: () => Promise<{ indexed: number }>;
       exportBackup: () => Promise<{ canceled: boolean; path?: string }>;
