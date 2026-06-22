@@ -31,8 +31,10 @@ declare global {
       createNote: (args: { title: string; body?: string; tags?: string[] | string; collectionIds?: string[] }) => Promise<VaultItem>;
       updateItem: (args: { id: string; title?: string; body?: string; tags?: string[] | string; favorite?: boolean; collectionIds?: string[] }) => Promise<VaultItem>;
       deleteItem: (id: string) => Promise<{ ok: boolean }>;
+      deleteItems: (ids: string[]) => Promise<{ deleted: number }>;
+      addTagsToItems: (ids: string[], tags: string[]) => Promise<{ updated: number }>;
       uploadFile: (args: { sourcePath: string; title?: string; body?: string; tags?: string[] | string; collectionIds?: string[] }) => Promise<VaultItem>;
-      linkFolder: (collectionIds?: string[]) => Promise<{ canceled: boolean; linked: number; folderPath?: string; folderName?: string }>;
+      linkFolder: (collectionIds?: string[]) => Promise<{ canceled: boolean; linked: number; folderPath?: string; folderName?: string; collection?: { id: string; name: string } }>;
       openFile: (id: string) => Promise<{ ok: boolean }>;
       reindexFiles: () => Promise<{ indexed: number }>;
       exportBackup: () => Promise<{ canceled: boolean; path?: string }>;

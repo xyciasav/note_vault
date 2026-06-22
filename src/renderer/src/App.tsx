@@ -67,6 +67,8 @@ export default function App() {
   const [newCollectionName, setNewCollectionName] = useState('');
   const [showNewCollectionInput, setShowNewCollectionInput] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [isSelectingItems, setIsSelectingItems] = useState(false);
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [backupDirectory, setBackupDirectory] = useState('');
   const [backupFrequency, setBackupFrequency] = useState<BackupFrequency>('daily');
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('vault-notes-theme') !== 'light');
@@ -405,12 +407,44 @@ export default function App() {
     }
   }
 
+  function toggleItemSelection(id: string) {
+    setSelectedItemIds(current => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function deleteSelectedItems() {
+    const ids = [...selectedItemIds];
+    if (ids.length === 0) return;
+    if (!confirm(`Delete ${ids.length} selected item${ids.length === 1 ? '' : 's'}?`)) return;
+    const result = await window.vaultApi.deleteItems(ids);
+    setSelectedItemIds(new Set());
+    setSelectedId(null);
+    await refresh();
+    setStatus(`Deleted ${result.deleted} items.`);
+  }
+
+  async function addTagsToSelectedItems() {
+    const ids = [...selectedItemIds];
+    if (ids.length === 0) return;
+    const value = prompt('Add comma-separated tags to the selected items:');
+    const tags = value ? tagStringToArray(value) : [];
+    if (tags.length === 0) return;
+    const result = await window.vaultApi.addTagsToItems(ids, tags);
+    await refresh();
+    setStatus(`Added tags to ${result.updated} items.`);
+  }
+
   async function linkFolder() {
     try {
       setStatus('Choose a folder to link...');
       const result = await window.vaultApi.linkFolder(selectedCollectionId ? [selectedCollectionId] : []);
       if (!result.canceled) {
         await refresh();
+        if (result.collection) setSelectedCollectionId(result.collection.id);
         setStatus(`Linked ${result.linked} files from ${result.folderName}.`);
       }
     } catch (err: any) {
@@ -662,18 +696,42 @@ export default function App() {
               {items.length} item{items.length === 1 ? '' : 's'}
             </div>
 
+            <div className="bulk-toolbar">
+              <button onClick={() => {
+                setIsSelectingItems(current => !current);
+                setSelectedItemIds(new Set());
+              }}>
+                {isSelectingItems ? 'Cancel Select' : 'Select Items'}
+              </button>
+              {isSelectingItems && <>
+                <span>{selectedItemIds.size} selected</span>
+                <button onClick={addTagsToSelectedItems} disabled={selectedItemIds.size === 0}>Add Tags</button>
+                <button className="danger" onClick={deleteSelectedItems} disabled={selectedItemIds.size === 0}>Delete</button>
+              </>}
+            </div>
+
             <div className="items-list">
               {items.map(item => (
-                <button
+                <div
                   key={item.id}
-                  className={`item-card ${selectedId === item.id ? 'selected' : ''}`}
-                  onClick={() => setSelectedId(item.id)}
+                  className={`item-card ${selectedId === item.id ? 'selected' : ''} ${selectedItemIds.has(item.id) ? 'bulk-selected' : ''}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => isSelectingItems ? toggleItemSelection(item.id) : setSelectedId(item.id)}
+                  onKeyDown={event => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      if (isSelectingItems) toggleItemSelection(item.id);
+                      else setSelectedId(item.id);
+                    }
+                  }}
                 >
                   <div className="item-card-top">
                     <span className="item-title">
                       {item.favorite ? '★ ' : ''}
                       {item.title || 'Untitled note'}
                     </span>
+                    {isSelectingItems && <span className="item-selector">{selectedItemIds.has(item.id) ? '✓' : ''}</span>}
                     <span className="item-type">{item.type}</span>
                   </div>
 
@@ -686,7 +744,7 @@ export default function App() {
                   </div>
 
                   <small>{formatDate(item.updated_at)}</small>
-                </button>
+                </div>
               ))}
             </div>
           </section>
@@ -817,6 +875,27 @@ export default function App() {
                   </button>
                 </div>
 
+                {allTags.length > 0 && (
+                  <div className="saved-tags-picker">
+                    <span className="muted-label">Saved tags</span>
+                    {allTags.map(tag => {
+                      const selectedTag = tagStringToArray(draftTags).includes(tag);
+                      return <button
+                        key={tag}
+                        type="button"
+                        disabled={!isEditing}
+                        className={selectedTag ? 'active' : ''}
+                        onClick={() => setDraftTags(current => {
+                          const tags = tagStringToArray(current);
+                          return (selectedTag ? tags.filter(existing => existing !== tag) : [...tags, tag]).join(', ');
+                        })}
+                      >
+                        #{tag}
+                      </button>;
+                    })}
+                  </div>
+                )}
+
                 <label className="field-label">Notes</label>
 
                 <textarea
@@ -836,6 +915,16 @@ export default function App() {
                       LOG files. PDF/DOCX extraction can be added next.
                     </span>
                   </div>
+                )}
+
+                {selected?.type === 'file' && selected.extracted_text && (
+                  <section className="file-reader">
+                    <div className="file-reader-header">
+                      <h3>File contents</h3>
+                      <span>Searchable text extracted locally</span>
+                    </div>
+                    <pre>{selected.extracted_text}</pre>
+                  </section>
                 )}
 
                 <div className="detail-toolbar detail-toolbar-bottom">

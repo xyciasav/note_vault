@@ -18,9 +18,15 @@ button, input, textarea { font: inherit; }
 .search-box { display: flex; align-items: center; gap: 10px; background: #0b1220; border: 1px solid #29364d; padding: 10px 12px; border-radius: 14px; }
 .search-box input { width: 100%; background: transparent; border: none; color: #e5e7eb; outline: none; }
 .result-count { color: #94a3b8; margin: 14px 4px; font-size: 13px; }
+.bulk-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 4px 12px; }
+.bulk-toolbar button { padding: 7px 9px; border-radius: 8px; border: 1px solid #93c5fd; background: #eff6ff; color: #1e3a8a; cursor: pointer; font-size: 12px; font-weight: 700; }
+.bulk-toolbar .danger { border-color: #fecaca; color: #b91c1c; background: #fef2f2; }
+.bulk-toolbar span { color: #475569; font-size: 12px; font-weight: 700; }
 .items-list { display: flex; flex-direction: column; gap: 10px; overflow: auto; padding-right: 4px; }
 .item-card { background: #172033; color: #e5e7eb; border: 1px solid #273449; border-radius: 16px; padding: 14px; text-align: left; cursor: pointer; }
 .item-card.selected { border-color: #60a5fa; background: #1d2b44; }
+.item-card.bulk-selected { border-color: #2563eb !important; box-shadow: 0 0 0 2px rgba(37, 99, 235, .18); }
+.item-selector { width: 20px; height: 20px; display: inline-grid; place-items: center; border: 1px solid #60a5fa; border-radius: 6px; color: #fff; background: #2563eb; font-size: 13px; font-weight: 900; }
 .item-card-top { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
 .item-title { font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item-type { color: #93c5fd; font-size: 11px; border: 1px solid #35527c; border-radius: 999px; padding: 2px 8px; text-transform: uppercase; }
@@ -112,6 +118,14 @@ button:active:not(:disabled) {
 .tag-add-row input {
   flex: 1;
 }
+.saved-tags-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 12px; }
+.saved-tags-picker button { border: 1px solid #bae6fd; border-radius: 999px; padding: 4px 9px; background: #f0f9ff; color: #075985; cursor: pointer; font-size: 12px; }
+.saved-tags-picker button.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+.file-reader { margin-top: 18px; border: 1px solid #cbd5e1; border-radius: 14px; overflow: hidden; background: #fff; }
+.file-reader-header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #e2e8f0; }
+.file-reader-header h3 { margin: 0; color: #0f172a; }
+.file-reader-header span { color: #64748b; font-size: 12px; }
+.file-reader pre { max-height: 420px; overflow: auto; margin: 0; padding: 16px; white-space: pre-wrap; color: #1e293b; font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
 
 button:disabled {
   opacity: 0.55;
@@ -1077,6 +1091,16 @@ body {
 .theme-dark .search-tag-dropdown-panel,
 .theme-dark .backup-path { background: #0b1220 !important; color: #e2e8f0 !important; border-color: #334155 !important; }
 .theme-dark .title-input { color: #ffffff !important; border-bottom-color: #475569 !important; }
+.theme-dark .bulk-toolbar button { background: #172033; color: #dbeafe; border-color: #334155; }
+.theme-dark .bulk-toolbar .danger { background: #3f1d2a; color: #fecaca; border-color: #7f1d1d; }
+.theme-dark .bulk-toolbar span { color: #94a3b8; }
+.theme-dark .saved-tags-picker button { background: #172033; color: #bfdbfe; border-color: #334155; }
+.theme-dark .saved-tags-picker button.active { background: #1d4ed8; color: #fff; border-color: #60a5fa; }
+.theme-dark .file-reader { background: #0b1220; border-color: #334155; }
+.theme-dark .file-reader-header { border-color: #334155; }
+.theme-dark .file-reader-header h3,
+.theme-dark .file-reader pre { color: #e2e8f0; }
+.theme-dark .file-reader-header span { color: #94a3b8; }
 
 .new-collection-form {
   display: flex;

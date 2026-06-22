@@ -248,7 +248,7 @@ function getItem(id: string) {
 
 async function extractText(sourcePath: string, ext: string) {
   const safeExt = ext.toLowerCase();
-  const searchable = ['.txt', '.md', '.csv', '.json', '.log', '.pdf'];
+  const searchable = ['.txt', '.md', '.csv', '.json', '.log', '.pdf', '.docx'];
   if (!searchable.includes(safeExt)) return '';
 
   try {
@@ -259,6 +259,18 @@ async function extractText(sourcePath: string, ext: string) {
       const result = await parser.getText();
       await parser.destroy();
       return result.text.slice(0, 500_000);
+    }
+    if (safeExt === '.docx') {
+      const documentXml = new AdmZip(sourcePath).getEntry('word/document.xml');
+      if (!documentXml) return '';
+      return documentXml.getData().toString('utf8')
+        .replace(/<w:tab\/>/g, '\t')
+        .replace(/<\/w:p>/g, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .slice(0, 500_000);
     }
     return fs.readFileSync(sourcePath, 'utf8').slice(0, 500_000);
   } catch {
@@ -612,6 +624,39 @@ ipcMain.handle('items:delete', (_event, id: string) => {
   return { ok: true };
 });
 
+ipcMain.handle('items:deleteMany', (_event, ids: string[]) => {
+  const deleteItem = db.prepare('DELETE FROM items WHERE id = ?');
+  const removeLinks = db.prepare('DELETE FROM item_collections WHERE item_id = ?');
+  const removeTags = db.prepare('DELETE FROM item_tags WHERE item_id = ?');
+
+  const transaction = db.transaction(() => {
+    for (const id of ids) {
+      const item = getItem(id);
+      if (!item) continue;
+      if (item.file_stored_name) {
+        const target = path.join(filesDir, item.file_stored_name);
+        if (fs.existsSync(target)) fs.unlinkSync(target);
+      }
+      removeLinks.run(id);
+      removeTags.run(id);
+      deleteItem.run(id);
+    }
+  });
+
+  transaction();
+  cleanupUnusedTags();
+  return { deleted: ids.length };
+});
+
+ipcMain.handle('items:addTags', (_event, ids: string[], tags: string[] | string) => {
+  for (const id of ids) {
+    const item = getItem(id);
+    if (!item) continue;
+    setTagsForItem(id, [...item.tags, ...splitTags(tags)]);
+  }
+  return { updated: ids.length };
+});
+
 ipcMain.handle('items:uploadFile', async (_event, args: { sourcePath: string; title?: string; body?: string; tags?: string[] | string; collectionIds?: string[] }) => {
   if (!args.sourcePath || !fs.existsSync(args.sourcePath)) throw new Error('File does not exist');
 
@@ -653,6 +698,13 @@ ipcMain.handle('items:linkFolder', async (_event, collectionIds: string[] = []) 
 
   const folderPath = result.filePaths[0];
   const folderName = path.basename(folderPath);
+  const collectionName = `Linked: ${folderName}`;
+  let linkedCollection = db.prepare('SELECT * FROM collections WHERE name = ? COLLATE NOCASE').get(collectionName) as { id: string; name: string } | undefined;
+  if (!linkedCollection) {
+    linkedCollection = { id: randomUUID(), name: collectionName };
+    db.prepare('INSERT INTO collections (id, name, created_at) VALUES (?, ?, ?)').run(linkedCollection.id, linkedCollection.name, nowIso());
+  }
+  const targetCollectionIds = [...new Set([...collectionIds, linkedCollection.id])];
   const files = listFolderFiles(folderPath).slice(0, 2000);
   const insert = db.prepare(`
     INSERT INTO items (id, title, type, body, file_name, file_source_path, file_ext, extracted_text, created_at, updated_at)
@@ -668,11 +720,11 @@ ipcMain.handle('items:linkFolder', async (_event, collectionIds: string[] = []) 
     const extracted = await extractText(sourcePath, ext);
     insert.run(id, title, '', path.basename(sourcePath), sourcePath, ext, extracted, ts, ts);
     setTagsForItem(id, [folderName]);
-    setCollectionsForItem(id, collectionIds);
+    setCollectionsForItem(id, targetCollectionIds);
     linked += 1;
   }
 
-  return { canceled: false, linked, folderPath, folderName };
+  return { canceled: false, linked, folderPath, folderName, collection: linkedCollection };
 });
 
 ipcMain.handle('items:openFile', async (_event, id: string) => {
