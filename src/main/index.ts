@@ -508,6 +508,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
+ipcMain.handle('app:getVersion', () => app.getVersion());
+
 ipcMain.handle('items:list', (_event, args: { search?: string; tag?: string; type?: string; collectionId?: string } = {}) => {
   const search = (args.search || '').trim().toLowerCase();
   const tag = (args.tag || '').trim();

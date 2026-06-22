@@ -21,6 +21,7 @@ export type VaultItem = {
 declare global {
   interface Window {
     vaultApi: {
+      getAppVersion: () => Promise<string>;
       getPathForFile: (file: File) => string;
       listItems: (args?: { search?: string; tag?: string; type?: string; collectionId?: string }) => Promise<VaultItem[]>;
       listTags: () => Promise<{ name: string }[]>;

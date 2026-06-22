@@ -70,6 +70,7 @@ export default function App() {
   const [backupDirectory, setBackupDirectory] = useState('');
   const [backupFrequency, setBackupFrequency] = useState<BackupFrequency>('daily');
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('vault-notes-theme') !== 'light');
+  const [appVersion, setAppVersion] = useState('');
 
   const selected = useMemo(() => {
     if (!selectedId) return null;
@@ -79,6 +80,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('vault-notes-theme', isDarkMode ? 'dark' : 'light');
   }, [isDarkMode]);
+
+  useEffect(() => {
+    window.vaultApi.getAppVersion().then(setAppVersion).catch(() => undefined);
+  }, []);
 
   const activeCollection = useMemo(
     () => collections.find(collection => collection.id === selectedCollectionId) || null,
@@ -504,7 +509,7 @@ export default function App() {
       <aside className="sidebar">
         <div className="brand">
           <Archive size={26} />
-          <span>Music Notes Vault</span>
+          <span>Music Notes Vault {appVersion && <small>v{appVersion}</small>}</span>
         </div>
 
         <button className="primary" onClick={createNote} disabled={isCreating}>
