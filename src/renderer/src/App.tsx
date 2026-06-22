@@ -69,11 +69,16 @@ export default function App() {
   const [isEditing, setIsEditing] = useState(false);
   const [backupDirectory, setBackupDirectory] = useState('');
   const [backupFrequency, setBackupFrequency] = useState<BackupFrequency>('daily');
+  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('vault-notes-theme') === 'dark');
 
   const selected = useMemo(() => {
     if (!selectedId) return null;
     return items.find(i => i.id === selectedId) || null;
   }, [items, selectedId]);
+
+  useEffect(() => {
+    localStorage.setItem('vault-notes-theme', isDarkMode ? 'dark' : 'light');
+  }, [isDarkMode]);
 
   const activeCollection = useMemo(
     () => collections.find(collection => collection.id === selectedCollectionId) || null,
@@ -458,7 +463,7 @@ export default function App() {
 
   return (
     <div
-      className="app-shell"
+      className={`app-shell ${isDarkMode ? 'theme-dark' : ''}`}
       onDragOver={e => {
         e.preventDefault();
         setIsDragging(true);
@@ -964,6 +969,15 @@ export default function App() {
               <p>Manage your vault data and its automatic backups.</p>
             </div>
           </div>
+
+          <section className="settings-section">
+            <h2>Appearance</h2>
+            <p>Use a darker palette that is easier on the eyes during long writing or practice sessions.</p>
+            <label className="theme-toggle">
+              <input type="checkbox" checked={isDarkMode} onChange={event => setIsDarkMode(event.target.checked)} />
+              <span>Dark Mode</span>
+            </label>
+          </section>
 
           <section className="settings-section">
             <h2>Backup & Export</h2>

@@ -1018,6 +1018,64 @@ body {
   justify-self: start;
 }
 
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #334155;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.theme-toggle input { accent-color: #2563eb; }
+
+/* Dark-mode overrides live last so they win over the default light theme. */
+.app-shell.theme-dark { background: #0b1220; color: #e2e8f0; }
+.theme-dark .sidebar,
+.theme-dark .list-panel,
+.theme-dark .detail-panel,
+.theme-dark .search-panel { background: #0f172a !important; color: #e2e8f0 !important; border-color: #263449 !important; }
+.theme-dark .sidebar button,
+.theme-dark .upload-button,
+.theme-dark .detail-toolbar button,
+.theme-dark .search-filters button,
+.theme-dark .search-workspace-header button,
+.theme-dark .settings-actions button,
+.theme-dark .tag-add-row button { background: #172033 !important; color: #dbeafe !important; border-color: #334155 !important; }
+.theme-dark .sidebar button:hover,
+.theme-dark .upload-button:hover,
+.theme-dark .detail-toolbar button:hover,
+.theme-dark .search-filters button:hover,
+.theme-dark .settings-actions button:hover { background: #1e293b !important; border-color: #60a5fa !important; }
+.theme-dark .sidebar button.active { background: #1d4ed8 !important; color: #fff !important; border-color: #60a5fa !important; }
+.theme-dark .item-card,
+.theme-dark .search-result-card,
+.theme-dark .settings-section,
+.theme-dark .collection-picker label,
+.theme-dark .status-bar { background: #172033 !important; color: #e2e8f0 !important; border-color: #334155 !important; box-shadow: none !important; }
+.theme-dark .item-card:hover,
+.theme-dark .item-card.selected,
+.theme-dark .search-result-card:hover { background: #1e293b !important; border-color: #60a5fa !important; }
+.theme-dark h1,
+.theme-dark h2,
+.theme-dark .item-title,
+.theme-dark .settings-section h2,
+.theme-dark .search-results-header { color: #f8fafc !important; }
+.theme-dark p,
+.theme-dark .meta-line,
+.theme-dark .settings-section p,
+.theme-dark .item-card p,
+.theme-dark .search-result-card p,
+.theme-dark .muted-label { color: #94a3b8 !important; }
+.theme-dark input,
+.theme-dark textarea,
+.theme-dark select,
+.theme-dark .full-search-box,
+.theme-dark .search-box,
+.theme-dark .search-tag-dropdown-button,
+.theme-dark .search-tag-dropdown-panel,
+.theme-dark .backup-path { background: #0b1220 !important; color: #e2e8f0 !important; border-color: #334155 !important; }
+
 .new-collection-form {
   display: flex;
   gap: 6px;
