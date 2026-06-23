@@ -843,7 +843,7 @@ export default function App() {
               <div className="dashboard-recent-list">
                 {dashboard.recentItems.map(item => (
                   <button key={item.id} onClick={() => openDashboardItem(item)}>
-                    {item.type === 'note' ? <FileText size={18} /> : <FolderOpen size={18} />}
+                    {item.thumbnail_data ? <img className="item-thumbnail item-thumbnail-small" src={item.thumbnail_data} alt="" /> : item.type === 'note' ? <FileText size={18} /> : <FolderOpen size={18} />}
                     <span><strong>{item.title || 'Untitled note'}</strong><small>{item.type} · Updated {formatDate(item.updated_at)}</small></span>
                   </button>
                 ))}
@@ -966,6 +966,7 @@ export default function App() {
                   }}
                 >
                   <div className="item-card-top">
+                    {item.thumbnail_data && <img className="item-thumbnail" src={item.thumbnail_data} alt="" />}
                     <span className="item-title">
                       {item.favorite ? '★ ' : ''}
                       {item.title || 'Untitled note'}
@@ -1396,6 +1397,7 @@ export default function App() {
                   onClick={() => openSearchResult(item)}
                 >
                   <div className="item-card-top">
+                    {item.thumbnail_data && <img className="item-thumbnail" src={item.thumbnail_data} alt="" />}
                     <span className="item-title">
                       {item.favorite ? '★ ' : ''}
                       {item.title || 'Untitled note'}

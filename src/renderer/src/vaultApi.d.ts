@@ -8,6 +8,7 @@ export type VaultItem = {
   file_source_path?: string | null;
   file_ext?: string | null;
   extracted_text?: string;
+  thumbnail_data?: string | null;
   favorite: boolean;
   collection_id?: string | null;
   collection_ids: string[];

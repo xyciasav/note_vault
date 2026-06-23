@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import Database from 'better-sqlite3';
@@ -71,6 +71,7 @@ function initDb() {
       file_source_path TEXT,
       file_ext TEXT,
       extracted_text TEXT DEFAULT '',
+      thumbnail_data TEXT,
       favorite INTEGER DEFAULT 0,
       collection_id TEXT,
       created_at TEXT NOT NULL,
@@ -113,6 +114,12 @@ function initDb() {
 
   try {
     db.exec('ALTER TABLE items ADD COLUMN file_source_path TEXT');
+  } catch {
+    // Existing databases already have this column after the first migration.
+  }
+
+  try {
+    db.exec('ALTER TABLE items ADD COLUMN thumbnail_data TEXT');
   } catch {
     // Existing databases already have this column after the first migration.
   }
@@ -345,6 +352,11 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '1.2.20': [
+    'Image uploads now receive local thumbnail previews.',
+    'Image thumbnails appear in the Library, Search, and Dashboard recent-items list.',
+    'Existing image files are indexed for thumbnails automatically when the app starts.'
+  ],
   '1.2.19': [
     'Arrow-key navigation now keeps the active library item in view.',
     'The sidebar and library list can be resized by dragging their dividers.',
@@ -381,6 +393,34 @@ async function showWhatsNewIfUpdated() {
   if (previousVersion !== currentVersion) {
     vaultSettings.lastLaunchedVersion = currentVersion;
     saveSettings();
+  }
+}
+
+const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.ico']);
+
+function createThumbnailData(sourcePath: string, ext: string) {
+  if (!imageExtensions.has(ext.toLowerCase())) return null;
+  try {
+    const image = nativeImage.createFromPath(sourcePath);
+    if (image.isEmpty()) return null;
+    return image.resize({ width: 320, quality: 'good' }).toDataURL();
+  } catch {
+    return null;
+  }
+}
+
+function generateMissingImageThumbnails() {
+  const imageItems = db.prepare(`
+    SELECT id, file_stored_name, file_source_path, file_ext
+    FROM items
+    WHERE type = 'file' AND thumbnail_data IS NULL
+  `).all() as { id: string; file_stored_name?: string; file_source_path?: string; file_ext?: string }[];
+  const update = db.prepare('UPDATE items SET thumbnail_data = ? WHERE id = ?');
+  for (const item of imageItems) {
+    const sourcePath = item.file_source_path || (item.file_stored_name ? path.join(filesDir, item.file_stored_name) : '');
+    if (!sourcePath || !fs.existsSync(sourcePath)) continue;
+    const thumbnail = createThumbnailData(sourcePath, item.file_ext || path.extname(sourcePath));
+    if (thumbnail) update.run(thumbnail, item.id);
   }
 }
 
@@ -540,6 +580,7 @@ app.whenReady().then(() => {
   ensureDirs();
   loadSettings();
   initDb();
+  generateMissingImageThumbnails();
   createAutoBackupIfNeeded();
   createWindow();
   mainWindow?.once('ready-to-show', async () => {
@@ -738,11 +779,12 @@ ipcMain.handle('items:uploadFile', async (_event, args: { sourcePath: string; ti
   const id = randomUUID();
   const ts = nowIso();
   const extracted = await extractText(dest, ext);
+  const thumbnail = createThumbnailData(dest, ext);
 
   db.prepare(`
-    INSERT INTO items (id, title, type, body, file_name, file_stored_name, file_ext, extracted_text, created_at, updated_at)
-    VALUES (?, ?, 'file', ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, args.title || originalName, args.body || '', originalName, storedName, ext, extracted, ts, ts);
+    INSERT INTO items (id, title, type, body, file_name, file_stored_name, file_ext, extracted_text, thumbnail_data, created_at, updated_at)
+    VALUES (?, ?, 'file', ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, args.title || originalName, args.body || '', originalName, storedName, ext, extracted, thumbnail, ts, ts);
 
   setTagsForItem(id, args.tags);
   setCollectionsForItem(id, args.collectionIds);
@@ -868,6 +910,7 @@ ipcMain.handle('backup:import', async () => {
         file_source_path,
         file_ext,
         extracted_text,
+        thumbnail_data,
         favorite,
         collection_id,
         created_at,
@@ -883,6 +926,7 @@ ipcMain.handle('backup:import', async () => {
         @file_source_path,
         @file_ext,
         @extracted_text,
+        @thumbnail_data,
         @favorite,
         @collection_id,
         @created_at,
@@ -915,7 +959,7 @@ ipcMain.handle('backup:import', async () => {
     }
 
     for (const item of backup.items) {
-      insertItem.run({ collection_id: null, file_source_path: null, ...item });
+      insertItem.run({ collection_id: null, file_source_path: null, thumbnail_data: null, ...item });
     }
 
     for (const tag of backup.tags) {
