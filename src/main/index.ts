@@ -352,6 +352,11 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '1.2.21': [
+    'Uploaded files now open ready to edit their title, tags, and collections.',
+    'Bulk actions can remove tags as well as add them.',
+    'The Library can be sorted by date, title, or tags, and modifier-click selection follows Windows-style ranges.'
+  ],
   '1.2.20': [
     'Image uploads now receive local thumbnail previews.',
     'Image thumbnails appear in the Library, Search, and Dashboard recent-items list.',
@@ -751,6 +756,19 @@ ipcMain.handle('items:addTags', (_event, ids: string[], tags: string[] | string)
     setTagsForItem(id, [...item.tags, ...splitTags(tags)]);
   }
   return { updated: ids.length };
+});
+
+ipcMain.handle('items:removeTags', (_event, ids: string[], tags: string[] | string) => {
+  const tagsToRemove = new Set(splitTags(tags).map(tag => tag.toLowerCase()));
+  let updated = 0;
+  for (const id of ids) {
+    const item = getItem(id);
+    if (!item) continue;
+    setTagsForItem(id, item.tags.filter((tag: string) => !tagsToRemove.has(tag.toLowerCase())));
+    updated += 1;
+  }
+  cleanupUnusedTags();
+  return { updated };
 });
 
 ipcMain.handle('items:addCollection', (_event, ids: string[], collectionId: string) => {

@@ -17,6 +17,7 @@ import './styles/app.css';
 import type { VaultItem } from './vaultApi';
 
 type TypeFilter = 'all' | 'note' | 'file';
+type ItemSort = 'updated' | 'title' | 'tags';
 type AppView = 'dashboard' | 'library' | 'search' | 'settings';
 type BackupFrequency = 'on-close' | 'daily' | 'weekly' | 'never';
 
@@ -47,6 +48,7 @@ export default function App() {
 
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [itemSort, setItemSort] = useState<ItemSort>('updated');
 
   const [searchText, setSearchText] = useState('');
   const [searchType, setSearchType] = useState<TypeFilter>('all');
@@ -79,6 +81,8 @@ export default function App() {
   const [showBulkTagPicker, setShowBulkTagPicker] = useState(false);
   const [showBulkCollectionPicker, setShowBulkCollectionPicker] = useState(false);
   const [bulkTags, setBulkTags] = useState<Set<string>>(new Set());
+  const [bulkTagAction, setBulkTagAction] = useState<'add' | 'remove'>('add');
+  const selectionAnchorIdRef = useRef<string | null>(null);
   const [backupDirectory, setBackupDirectory] = useState('');
   const [backupFrequency, setBackupFrequency] = useState<BackupFrequency>('daily');
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('vault-notes-theme') !== 'light');
@@ -94,6 +98,12 @@ export default function App() {
     if (!selectedId) return null;
     return items.find(i => i.id === selectedId) || null;
   }, [items, selectedId]);
+
+  const sortedItems = useMemo(() => [...items].sort((left, right) => {
+    if (itemSort === 'title') return (left.title || '').localeCompare(right.title || '');
+    if (itemSort === 'tags') return ((left.tags || []).join(', ')).localeCompare((right.tags || []).join(', ')) || (left.title || '').localeCompare(right.title || '');
+    return new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime();
+  }), [items, itemSort]);
 
   useEffect(() => {
     localStorage.setItem('vault-notes-theme', isDarkMode ? 'dark' : 'light');
@@ -287,6 +297,7 @@ export default function App() {
 
       autoEditIdRef.current = item.id;
       setSelectedId(item.id);
+      setIsEditing(true);
       setDraftTitle(item.title || 'Untitled note');
       setDraftBody('');
       setDraftTags('');
@@ -461,7 +472,11 @@ export default function App() {
       }
       setAppView('library');
       await refresh();
-      if (lastItem) setSelectedId(lastItem.id);
+      if (lastItem) {
+        autoEditIdRef.current = lastItem.id;
+        setSelectedId(lastItem.id);
+        setIsEditing(true);
+      }
       setStatus(`Uploaded ${files.length} file${files.length === 1 ? '' : 's'}.`);
     } catch (err: any) {
       setStatus(`Upload failed: ${err.message}`);
@@ -479,6 +494,28 @@ export default function App() {
     });
   }
 
+  function selectItemWithModifiers(itemId: string, event: React.MouseEvent<HTMLDivElement>) {
+    const modifier = event.ctrlKey || event.metaKey || event.shiftKey;
+    if (!modifier) {
+      if (isSelectingItems) toggleItemSelection(itemId);
+      else setSelectedId(itemId);
+      return;
+    }
+
+    setIsSelectingItems(true);
+    if (event.shiftKey) {
+      const anchorId = selectionAnchorIdRef.current || selectedId || itemId;
+      const start = sortedItems.findIndex(item => item.id === anchorId);
+      const end = sortedItems.findIndex(item => item.id === itemId);
+      const rangeStart = start === -1 ? end : start;
+      const range = sortedItems.slice(Math.min(rangeStart, end), Math.max(rangeStart, end) + 1).map(item => item.id);
+      setSelectedItemIds(current => event.ctrlKey || event.metaKey ? new Set([...current, ...range]) : new Set(range));
+    } else {
+      toggleItemSelection(itemId);
+      selectionAnchorIdRef.current = itemId;
+    }
+  }
+
   useEffect(() => {
     function navigateItems(event: KeyboardEvent) {
       if (appView !== 'library' || isSelectingItems) return;
@@ -489,18 +526,18 @@ export default function App() {
       if (items.length === 0) return;
 
       event.preventDefault();
-      const currentIndex = items.findIndex(item => item.id === selectedId);
+      const currentIndex = sortedItems.findIndex(item => item.id === selectedId);
       const delta = event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : 1;
       const nextIndex = currentIndex === -1
-        ? (delta > 0 ? 0 : items.length - 1)
-        : Math.max(0, Math.min(items.length - 1, currentIndex + delta));
+        ? (delta > 0 ? 0 : sortedItems.length - 1)
+        : Math.max(0, Math.min(sortedItems.length - 1, currentIndex + delta));
 
-      setSelectedId(items[nextIndex].id);
+      setSelectedId(sortedItems[nextIndex].id);
     }
 
     window.addEventListener('keydown', navigateItems);
     return () => window.removeEventListener('keydown', navigateItems);
-  }, [appView, isSelectingItems, items, selectedId]);
+  }, [appView, isSelectingItems, sortedItems, selectedId]);
 
   useEffect(() => {
     if (appView !== 'library' || !selectedId) return;
@@ -544,16 +581,18 @@ export default function App() {
     });
   }
 
-  async function addTagsToSelectedItems() {
+  async function applyBulkTags() {
     const ids = [...selectedItemIds];
     if (ids.length === 0) return;
     const tags = [...bulkTags];
     if (tags.length === 0) return;
-    const result = await window.vaultApi.addTagsToItems(ids, tags);
+    const result = bulkTagAction === 'add'
+      ? await window.vaultApi.addTagsToItems(ids, tags)
+      : await window.vaultApi.removeTagsFromItems(ids, tags);
     await refresh();
     setBulkTags(new Set());
     setShowBulkTagPicker(false);
-    setStatus(`Added tags to ${result.updated} items.`);
+    setStatus(`${bulkTagAction === 'add' ? 'Added' : 'Removed'} tags for ${result.updated} items.`);
   }
 
   async function addCollectionToSelectedItems(collectionId: string) {
@@ -868,6 +907,13 @@ export default function App() {
             <div className="result-count">
               {activeCollection ? `${activeCollection.name}: ` : ''}
               {items.length} item{items.length === 1 ? '' : 's'}
+              <label className="sort-control">Sort
+                <select value={itemSort} onChange={event => setItemSort(event.target.value as ItemSort)}>
+                  <option value="updated">Date updated</option>
+                  <option value="title">A–Z</option>
+                  <option value="tags">Tags</option>
+                </select>
+              </label>
             </div>
 
             <div className="bulk-toolbar">
@@ -884,12 +930,23 @@ export default function App() {
                 <span>{selectedItemIds.size} selected</span>
                 <button
                   onClick={() => {
+                    setBulkTagAction('add');
                     setShowBulkTagPicker(current => !current);
                     setShowBulkCollectionPicker(false);
                   }}
                   disabled={selectedItemIds.size === 0 || allTags.length === 0}
                 >
                   Add Tags
+                </button>
+                <button
+                  onClick={() => {
+                    setBulkTagAction('remove');
+                    setShowBulkTagPicker(true);
+                    setShowBulkCollectionPicker(false);
+                  }}
+                  disabled={selectedItemIds.size === 0 || allTags.length === 0}
+                >
+                  Remove Tags
                 </button>
                 <button
                   onClick={() => {
@@ -906,7 +963,7 @@ export default function App() {
 
             {isSelectingItems && showBulkTagPicker && (
               <div className="bulk-action-panel">
-                <strong>Choose tags to add</strong>
+                <strong>Choose tags to {bulkTagAction}</strong>
                 <div className="bulk-choice-list">
                   {allTags.map(tag => <label key={tag}>
                     <input type="checkbox" checked={bulkTags.has(tag)} onChange={() => toggleBulkTag(tag)} />
@@ -915,8 +972,8 @@ export default function App() {
                 </div>
                 <div className="bulk-action-footer">
                   <button onClick={() => setShowBulkTagPicker(false)}>Cancel</button>
-                  <button className="primary-action" onClick={addTagsToSelectedItems} disabled={bulkTags.size === 0}>
-                    Add {bulkTags.size || ''} Tag{bulkTags.size === 1 ? '' : 's'}
+                  <button className="primary-action" onClick={applyBulkTags} disabled={bulkTags.size === 0}>
+                    {bulkTagAction === 'add' ? 'Add' : 'Remove'} {bulkTags.size || ''} Tag{bulkTags.size === 1 ? '' : 's'}
                   </button>
                 </div>
               </div>
@@ -934,7 +991,7 @@ export default function App() {
             )}
 
             <div className="items-list" ref={itemsListRef}>
-              {items.map(item => (
+              {sortedItems.map(item => (
                 <div
                   key={item.id}
                   ref={element => {
@@ -947,16 +1004,7 @@ export default function App() {
                   onMouseDown={event => {
                     if (event.ctrlKey || event.metaKey || event.shiftKey) event.preventDefault();
                   }}
-                  onClick={event => {
-                    if (event.ctrlKey || event.metaKey || event.shiftKey) {
-                      setIsSelectingItems(true);
-                      toggleItemSelection(item.id);
-                    } else if (isSelectingItems) {
-                      toggleItemSelection(item.id);
-                    } else {
-                      setSelectedId(item.id);
-                    }
-                  }}
+                  onClick={event => selectItemWithModifiers(item.id, event)}
                   onKeyDown={event => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();

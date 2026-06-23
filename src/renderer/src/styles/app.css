@@ -50,7 +50,9 @@ button, input, textarea { font: inherit; }
 .list-panel { background: #111827; border-right: 1px solid #1f2937; padding: 18px; overflow: hidden; display: flex; flex-direction: column; }
 .search-box { display: flex; align-items: center; gap: 10px; background: #0b1220; border: 1px solid #29364d; padding: 10px 12px; border-radius: 14px; }
 .search-box input { width: 100%; background: transparent; border: none; color: #e5e7eb; outline: none; }
-.result-count { color: #94a3b8; margin: 14px 4px; font-size: 13px; }
+.result-count { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #94a3b8; margin: 14px 4px; font-size: 13px; }
+.sort-control { display: inline-flex; align-items: center; gap: 6px; color: #94a3b8; font-size: 12px; }
+.sort-control select { max-width: 130px; padding: 5px 7px; border: 1px solid #334155; border-radius: 8px; background: #0b1220; color: #dbeafe; }
 .bulk-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 4px 12px; }
 .bulk-toolbar button { padding: 7px 9px; border-radius: 8px; border: 1px solid #93c5fd; background: #eff6ff; color: #1e3a8a; cursor: pointer; font-size: 12px; font-weight: 700; }
 .bulk-toolbar .danger { border-color: #fecaca; color: #b91c1c; background: #fef2f2; }
