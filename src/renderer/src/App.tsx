@@ -85,6 +85,10 @@ export default function App() {
   const [appVersion, setAppVersion] = useState('');
   const [dashboard, setDashboard] = useState<{ totalItems: number; notes: number; files: number; favorites: number; collections: number; tags: number; recentItems: VaultItem[] } | null>(null);
   const itemsListRef = useRef<HTMLDivElement | null>(null);
+  const itemCardRefs = useRef(new Map<string, HTMLDivElement>());
+  const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [listWidth, setListWidth] = useState(370);
+  const [resizingPane, setResizingPane] = useState<'sidebar' | 'list' | null>(null);
 
   const selected = useMemo(() => {
     if (!selectedId) return null;
@@ -498,6 +502,28 @@ export default function App() {
     return () => window.removeEventListener('keydown', navigateItems);
   }, [appView, isSelectingItems, items, selectedId]);
 
+  useEffect(() => {
+    if (appView !== 'library' || !selectedId) return;
+    requestAnimationFrame(() => {
+      itemCardRefs.current.get(selectedId)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+  }, [appView, selectedId]);
+
+  useEffect(() => {
+    if (!resizingPane) return;
+    const onMouseMove = (event: MouseEvent) => {
+      if (resizingPane === 'sidebar') setSidebarWidth(Math.max(180, Math.min(460, event.clientX)));
+      else setListWidth(Math.max(250, Math.min(650, event.clientX - sidebarWidth)));
+    };
+    const onMouseUp = () => setResizingPane(null);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [resizingPane, sidebarWidth]);
+
   async function deleteSelectedItems() {
     const ids = [...selectedItemIds];
     if (ids.length === 0) return;
@@ -616,6 +642,7 @@ export default function App() {
   return (
     <div
       className={`app-shell ${isDarkMode ? 'theme-dark' : ''}`}
+      style={{ '--sidebar-width': `${sidebarWidth}px`, '--list-width': `${listWidth}px` } as React.CSSProperties}
       onDragOver={e => {
         e.preventDefault();
         setIsDragging(true);
@@ -771,6 +798,9 @@ export default function App() {
 
       </aside>
 
+      <div className="pane-resizer pane-resizer-sidebar" onMouseDown={() => setResizingPane('sidebar')} />
+      {appView === 'library' && <div className="pane-resizer pane-resizer-list" onMouseDown={() => setResizingPane('list')} />}
+
       {appView === 'dashboard' ? (
         <main className="dashboard-panel">
           <div className="dashboard-header">
@@ -907,6 +937,10 @@ export default function App() {
               {items.map(item => (
                 <div
                   key={item.id}
+                  ref={element => {
+                    if (element) itemCardRefs.current.set(item.id, element);
+                    else itemCardRefs.current.delete(item.id);
+                  }}
                   className={`item-card ${selectedId === item.id ? 'selected' : ''} ${selectedItemIds.has(item.id) ? 'bulk-selected' : ''}`}
                   role="button"
                   tabIndex={0}

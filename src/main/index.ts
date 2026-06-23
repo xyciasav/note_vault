@@ -345,6 +345,11 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '1.2.19': [
+    'Arrow-key navigation now keeps the active library item in view.',
+    'The sidebar and library list can be resized by dragging their dividers.',
+    'Scrollbars have been restyled to match the vault interface.'
+  ],
   '1.2.18': [
     'Vault Dashboard is now the app’s home screen, with a quick view of your vault.',
     'Open recent notes and files directly from the dashboard.',
