@@ -352,6 +352,15 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '1.2.27': [
+    'Restored the original direct tag controls on individual notes and files.',
+    'The unified Edit Tags experience remains available for bulk item changes.'
+  ],
+  '1.2.26': [
+    'Bulk tags now use one Edit Tags picker instead of separate add and remove actions.',
+    'Existing tags are shown as checked, with usage counts across the selected items.',
+    'Only tag choices you change are applied when saving.'
+  ],
   '1.2.25': [
     'Collections now use the same unified edit-picker pattern as tags.',
     'Current collections are shown as a simple summary and can be changed from one matching dropdown.'

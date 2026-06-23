@@ -71,7 +71,6 @@ export default function App() {
   const [isSaving, setIsSaving] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [newTagText, setNewTagText] = useState('');
-  const [showEditTagPicker, setShowEditTagPicker] = useState(false);
   const [showEditCollectionPicker, setShowEditCollectionPicker] = useState(false);
   const [showSearchTagDropdown, setShowSearchTagDropdown] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
@@ -83,7 +82,7 @@ export default function App() {
   const [showBulkTagPicker, setShowBulkTagPicker] = useState(false);
   const [showBulkCollectionPicker, setShowBulkCollectionPicker] = useState(false);
   const [bulkTags, setBulkTags] = useState<Set<string>>(new Set());
-  const [bulkTagAction, setBulkTagAction] = useState<'add' | 'remove'>('add');
+  const [bulkTagTouched, setBulkTagTouched] = useState<Set<string>>(new Set());
   const selectionAnchorIdRef = useRef<string | null>(null);
   const [backupDirectory, setBackupDirectory] = useState('');
   const [backupFrequency, setBackupFrequency] = useState<BackupFrequency>('daily');
@@ -122,8 +121,8 @@ export default function App() {
   }, [items, selectedItemIds]);
 
   const bulkTagChoices = useMemo(
-    () => bulkTagAction === 'remove' ? [...bulkTagUsage.keys()].sort((a, b) => a.localeCompare(b)) : allTags,
-    [allTags, bulkTagAction, bulkTagUsage]
+    () => [...new Set([...allTags, ...bulkTagUsage.keys()])].sort((a, b) => a.localeCompare(b)),
+    [allTags, bulkTagUsage]
   );
 
   useEffect(() => {
@@ -608,20 +607,23 @@ export default function App() {
       else next.add(tag);
       return next;
     });
+    setBulkTagTouched(current => new Set([...current, tag]));
   }
 
   async function applyBulkTags() {
     const ids = [...selectedItemIds];
     if (ids.length === 0) return;
-    const tags = [...bulkTags];
-    if (tags.length === 0) return;
-    const result = bulkTagAction === 'add'
-      ? await window.vaultApi.addTagsToItems(ids, tags)
-      : await window.vaultApi.removeTagsFromItems(ids, tags);
+    const changedTags = [...bulkTagTouched];
+    if (changedTags.length === 0) return;
+    const addTags = changedTags.filter(tag => bulkTags.has(tag));
+    const removeTags = changedTags.filter(tag => !bulkTags.has(tag));
+    if (addTags.length) await window.vaultApi.addTagsToItems(ids, addTags);
+    if (removeTags.length) await window.vaultApi.removeTagsFromItems(ids, removeTags);
     await refresh();
     setBulkTags(new Set());
+    setBulkTagTouched(new Set());
     setShowBulkTagPicker(false);
-    setStatus(`${bulkTagAction === 'add' ? 'Added' : 'Removed'} tags for ${result.updated} items.`);
+    setStatus('Updated tags for selected items.');
   }
 
   async function addCollectionToSelectedItems(collectionId: string) {
@@ -950,6 +952,7 @@ export default function App() {
                 setIsSelectingItems(current => !current);
                 setSelectedItemIds(new Set());
                 setBulkTags(new Set());
+                setBulkTagTouched(new Set());
                 setShowBulkTagPicker(false);
                 setShowBulkCollectionPicker(false);
               }}>
@@ -959,25 +962,14 @@ export default function App() {
                 <span>{selectedItemIds.size} selected</span>
                 <button
                   onClick={() => {
-                    setBulkTagAction('add');
-                    setBulkTags(new Set());
+                    setBulkTags(new Set(bulkTagUsage.keys()));
+                    setBulkTagTouched(new Set());
                     setShowBulkTagPicker(true);
                     setShowBulkCollectionPicker(false);
                   }}
                   disabled={selectedItemIds.size === 0 || allTags.length === 0}
                 >
-                  Add Tags
-                </button>
-                <button
-                  onClick={() => {
-                    setBulkTagAction('remove');
-                    setBulkTags(new Set());
-                    setShowBulkTagPicker(true);
-                    setShowBulkCollectionPicker(false);
-                  }}
-                  disabled={selectedItemIds.size === 0 || bulkTagUsage.size === 0}
-                >
-                  Remove Tags
+                  Edit Tags
                 </button>
                 <button
                   onClick={() => {
@@ -994,9 +986,9 @@ export default function App() {
 
             {isSelectingItems && showBulkTagPicker && (
               <div className="bulk-action-panel">
-                <strong>{bulkTagAction === 'remove' ? 'Choose existing tags to remove' : 'Choose tags to add'}</strong>
+                <strong>Edit tags for selected items</strong>
                 <div className="bulk-choice-list">
-                  {bulkTagChoices.length === 0 ? <span className="muted-label">The selected items do not have any tags to remove.</span> : bulkTagChoices.map(tag => <label key={tag}>
+                  {bulkTagChoices.map(tag => <label key={tag}>
                     <input type="checkbox" checked={bulkTags.has(tag)} onChange={() => toggleBulkTag(tag)} />
                     <span>#{tag}</span>
                     {bulkTagUsage.has(tag) && <small>{bulkTagUsage.get(tag)}/{selectedItemIds.size}</small>}
@@ -1004,8 +996,8 @@ export default function App() {
                 </div>
                 <div className="bulk-action-footer">
                   <button onClick={() => setShowBulkTagPicker(false)}>Cancel</button>
-                  <button className="primary-action" onClick={applyBulkTags} disabled={bulkTags.size === 0}>
-                    {bulkTagAction === 'add' ? 'Add' : 'Remove'} {bulkTags.size || ''} Tag{bulkTags.size === 1 ? '' : 's'}
+                  <button className="primary-action" onClick={applyBulkTags} disabled={bulkTagTouched.size === 0}>
+                    Save Tag Changes
                   </button>
                 </div>
               </div>
@@ -1159,7 +1151,7 @@ export default function App() {
                   {tagStringToArray(draftTags).map(tag => (
                     <span className="tag-chip-editable" key={tag}>
                       #{tag}
-                      {false && <button
+                      {isEditing && <button
                         type="button"
                         title={`Remove ${tag}`}
                         onClick={() => {
@@ -1177,38 +1169,39 @@ export default function App() {
                   )}
                 </div>
 
-                {isEditing && <div className="edit-tags-wrap">
-                  <button type="button" className="edit-tags-button" onClick={() => setShowEditTagPicker(current => !current)}>
-                    Edit Tags <span>▾</span>
-                  </button>
-                  {showEditTagPicker && <div className="edit-tags-panel">
-                    <input
-                      className="tags-input"
-                      value={newTagText}
-                      onChange={e => setNewTagText(e.target.value)}
-                      placeholder="Create a new tag, then press Enter"
-                      onKeyDown={e => {
-                        if (e.key !== 'Enter') return;
-                        e.preventDefault();
-                        const tag = newTagText.trim();
-                        if (!tag) return;
-                        setDraftTags(current => [...new Set([...tagStringToArray(current), tag])].join(', '));
-                        setNewTagText('');
-                      }}
-                    />
-                    <div className="edit-tags-list">
-                      {[...new Set([...allTags, ...tagStringToArray(draftTags)])].sort((a, b) => a.localeCompare(b)).map(tag => {
-                        const selectedTag = tagStringToArray(draftTags).includes(tag);
-                        return <label key={tag}>
-                          <input type="checkbox" checked={selectedTag} onChange={() => setDraftTags(current => {
-                            const tags = tagStringToArray(current);
-                            return (selectedTag ? tags.filter(existing => existing !== tag) : [...tags, tag]).join(', ');
-                          })} />
-                          <span>#{tag}</span>
-                        </label>;
-                      })}
-                    </div>
-                  </div>}
+                <div className="tag-add-row">
+                  <input
+                    className="tags-input"
+                    value={newTagText}
+                    disabled={!isEditing}
+                    onChange={e => setNewTagText(e.target.value)}
+                    placeholder="Add tag, like theory or scales"
+                    onKeyDown={e => {
+                      if (e.key !== 'Enter') return;
+                      e.preventDefault();
+                      const tag = newTagText.trim();
+                      if (!tag) return;
+                      setDraftTags(current => [...new Set([...tagStringToArray(current), tag])].join(', '));
+                      setNewTagText('');
+                    }}
+                  />
+                  <button type="button" disabled={!isEditing} onClick={() => {
+                    const tag = newTagText.trim();
+                    if (!tag) return;
+                    setDraftTags(current => [...new Set([...tagStringToArray(current), tag])].join(', '));
+                    setNewTagText('');
+                  }}>Add Tag</button>
+                </div>
+
+                {allTags.length > 0 && <div className="saved-tags-picker">
+                  <span className="muted-label">Saved tags</span>
+                  {allTags.map(tag => {
+                    const selectedTag = tagStringToArray(draftTags).includes(tag);
+                    return <button key={tag} type="button" disabled={!isEditing} className={selectedTag ? 'active' : ''} onClick={() => setDraftTags(current => {
+                      const tags = tagStringToArray(current);
+                      return (selectedTag ? tags.filter(existing => existing !== tag) : [...tags, tag]).join(', ');
+                    })}>#{tag}</button>;
+                  })}
                 </div>}
 
                 <label className="field-label">Notes</label>
