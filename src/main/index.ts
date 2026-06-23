@@ -345,6 +345,11 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '1.2.18': [
+    'Vault Dashboard is now the app’s home screen, with a quick view of your vault.',
+    'Open recent notes and files directly from the dashboard.',
+    'Dashboard cards provide quick paths into notes, files, search, and collections.'
+  ],
   '1.2.17': [
     'Collections return to a simple, focused list.',
     'Vault Notes now shows What’s New after an update, including upgrades from older versions.',
@@ -551,6 +556,21 @@ app.on('window-all-closed', () => {
 });
 
 ipcMain.handle('app:getVersion', () => app.getVersion());
+
+ipcMain.handle('dashboard:summary', () => {
+  const count = (where = '', params: unknown[] = []) =>
+    (db.prepare(`SELECT COUNT(*) AS total FROM items ${where}`).get(...params) as { total: number }).total;
+
+  return {
+    totalItems: count(),
+    notes: count("WHERE type = 'note'"),
+    files: count("WHERE type = 'file'"),
+    favorites: count('WHERE favorite = 1'),
+    collections: (db.prepare('SELECT COUNT(*) AS total FROM collections').get() as { total: number }).total,
+    tags: (db.prepare('SELECT COUNT(*) AS total FROM tags').get() as { total: number }).total,
+    recentItems: (db.prepare('SELECT * FROM items ORDER BY updated_at DESC LIMIT 6').all() as any[]).map(rowToItem)
+  };
+});
 
 ipcMain.handle('items:list', (_event, args: { search?: string; tag?: string; type?: string; collectionId?: string } = {}) => {
   const search = (args.search || '').trim().toLowerCase();

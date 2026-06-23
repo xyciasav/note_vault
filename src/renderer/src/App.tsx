@@ -17,7 +17,7 @@ import './styles/app.css';
 import type { VaultItem } from './vaultApi';
 
 type TypeFilter = 'all' | 'note' | 'file';
-type AppView = 'library' | 'search' | 'settings';
+type AppView = 'dashboard' | 'library' | 'search' | 'settings';
 type BackupFrequency = 'on-close' | 'daily' | 'weekly' | 'never';
 
 function tagStringToArray(value: string) {
@@ -43,7 +43,7 @@ export default function App() {
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const [appView, setAppView] = useState<AppView>('library');
+  const [appView, setAppView] = useState<AppView>('dashboard');
 
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
@@ -83,6 +83,7 @@ export default function App() {
   const [backupFrequency, setBackupFrequency] = useState<BackupFrequency>('daily');
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('vault-notes-theme') !== 'light');
   const [appVersion, setAppVersion] = useState('');
+  const [dashboard, setDashboard] = useState<{ totalItems: number; notes: number; files: number; favorites: number; collections: number; tags: number; recentItems: VaultItem[] } | null>(null);
   const itemsListRef = useRef<HTMLDivElement | null>(null);
 
   const selected = useMemo(() => {
@@ -122,6 +123,9 @@ export default function App() {
 
     const loadedCollections = await window.vaultApi.listCollections();
     setCollections(loadedCollections);
+
+    const dashboardSummary = await window.vaultApi.getDashboardSummary();
+    setDashboard(dashboardSummary);
 
     return loadedItems;
   }
@@ -185,6 +189,20 @@ export default function App() {
     setItems(current => [item, ...current.filter(existing => existing.id !== item.id)]);
     setSelectedId(item.id);
     setSearchPreviewItem(null);
+    setAppView('library');
+  }
+
+  function openDashboardLibrary(type: TypeFilter = 'all') {
+    setSelectedCollectionId(null);
+    setTypeFilter(type);
+    setAppView('library');
+  }
+
+  function openDashboardItem(item: VaultItem) {
+    setSelectedCollectionId(null);
+    setTypeFilter('all');
+    setItems(current => [item, ...current.filter(existing => existing.id !== item.id)]);
+    setSelectedId(item.id);
     setAppView('library');
   }
 
@@ -635,6 +653,13 @@ export default function App() {
           <div className="side-label">Workspace</div>
 
           <button
+            className={appView === 'dashboard' ? 'active' : ''}
+            onClick={() => setAppView('dashboard')}
+          >
+            <Archive size={16} /> Dashboard
+          </button>
+
+          <button
             className={appView === 'library' ? 'active' : ''}
             onClick={() => setAppView('library')}
           >
@@ -746,7 +771,59 @@ export default function App() {
 
       </aside>
 
-      {appView === 'library' ? (
+      {appView === 'dashboard' ? (
+        <main className="dashboard-panel">
+          <div className="dashboard-header">
+            <div>
+              <h1>Vault Dashboard</h1>
+              <p>Your music notes, files, and projects at a glance.</p>
+            </div>
+            <button className="dashboard-new-note" onClick={createNote} disabled={isCreating}>
+              <Plus size={16} /> {isCreating ? 'Creating...' : 'New Note'}
+            </button>
+          </div>
+
+          <section className="dashboard-cards">
+            <button className="dashboard-card" onClick={() => openDashboardLibrary()}>
+              <span>All Items</span><strong>{dashboard?.totalItems ?? 0}</strong><small>Everything in your vault</small>
+            </button>
+            <button className="dashboard-card" onClick={() => openDashboardLibrary('note')}>
+              <span>Notes</span><strong>{dashboard?.notes ?? 0}</strong><small>Ideas, lessons, and lyrics</small>
+            </button>
+            <button className="dashboard-card" onClick={() => openDashboardLibrary('file')}>
+              <span>Files</span><strong>{dashboard?.files ?? 0}</strong><small>Uploaded documents and assets</small>
+            </button>
+            <button className="dashboard-card" onClick={() => openDashboardLibrary()}>
+              <span>Collections</span><strong>{dashboard?.collections ?? 0}</strong><small>Projects and groupings</small>
+            </button>
+            <button className="dashboard-card" onClick={() => setAppView('search')}>
+              <span>Tags</span><strong>{dashboard?.tags ?? 0}</strong><small>Ways to find related ideas</small>
+            </button>
+            <button className="dashboard-card" onClick={() => openDashboardLibrary()}>
+              <span>Favorites</span><strong>{dashboard?.favorites ?? 0}</strong><small>Starred items</small>
+            </button>
+          </section>
+
+          <section className="dashboard-recent">
+            <div className="dashboard-section-header">
+              <div><h2>Recently updated</h2><p>Pick up where you left off.</p></div>
+              <button onClick={() => openDashboardLibrary()}>Open Library</button>
+            </div>
+            {dashboard?.recentItems.length ? (
+              <div className="dashboard-recent-list">
+                {dashboard.recentItems.map(item => (
+                  <button key={item.id} onClick={() => openDashboardItem(item)}>
+                    {item.type === 'note' ? <FileText size={18} /> : <FolderOpen size={18} />}
+                    <span><strong>{item.title || 'Untitled note'}</strong><small>{item.type} · Updated {formatDate(item.updated_at)}</small></span>
+                  </button>
+                ))}
+              </div>
+            ) : <div className="dashboard-empty">Create a note or upload a file to start building your vault.</div>}
+          </section>
+
+          {status && <div className="status-bar">{status}</div>}
+        </main>
+      ) : appView === 'library' ? (
         <>
           <section className="list-panel">
             <div className="search-box">

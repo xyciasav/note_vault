@@ -22,6 +22,7 @@ declare global {
   interface Window {
     vaultApi: {
       getAppVersion: () => Promise<string>;
+      getDashboardSummary: () => Promise<{ totalItems: number; notes: number; files: number; favorites: number; collections: number; tags: number; recentItems: VaultItem[] }>;
       getPathForFile: (file: File) => string;
       listItems: (args?: { search?: string; tag?: string; type?: string; collectionId?: string }) => Promise<VaultItem[]>;
       listTags: () => Promise<{ name: string }[]>;

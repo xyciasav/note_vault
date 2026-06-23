@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 contextBridge.exposeInMainWorld('vaultApi', {
   getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
+  getDashboardSummary: () => ipcRenderer.invoke('dashboard:summary'),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   listItems: (args?: { search?: string; tag?: string; type?: string; collectionId?: string }) => ipcRenderer.invoke('items:list', args),
   listTags: () => ipcRenderer.invoke('tags:list'),
