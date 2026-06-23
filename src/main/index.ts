@@ -352,6 +352,14 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '1.2.23': [
+    'Sidebar and library pane sizes now persist after restarting the app.'
+  ],
+  '1.2.22': [
+    'Bulk tag actions now show tags already used by the selected items.',
+    'Remove Tags only offers tags that are actually present on the current selection.',
+    'Tag usage counts show how many selected items have each tag.'
+  ],
   '1.2.21': [
     'Uploaded files now open ready to edit their title, tags, and collections.',
     'Bulk actions can remove tags as well as add them.',

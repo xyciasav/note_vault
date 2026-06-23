@@ -90,8 +90,14 @@ export default function App() {
   const [dashboard, setDashboard] = useState<{ totalItems: number; notes: number; files: number; favorites: number; collections: number; tags: number; recentItems: VaultItem[] } | null>(null);
   const itemsListRef = useRef<HTMLDivElement | null>(null);
   const itemCardRefs = useRef(new Map<string, HTMLDivElement>());
-  const [sidebarWidth, setSidebarWidth] = useState(260);
-  const [listWidth, setListWidth] = useState(370);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = Number(localStorage.getItem('vault-notes-sidebar-width'));
+    return Number.isFinite(saved) && saved >= 180 && saved <= 460 ? saved : 260;
+  });
+  const [listWidth, setListWidth] = useState(() => {
+    const saved = Number(localStorage.getItem('vault-notes-list-width'));
+    return Number.isFinite(saved) && saved >= 250 && saved <= 650 ? saved : 370;
+  });
   const [resizingPane, setResizingPane] = useState<'sidebar' | 'list' | null>(null);
 
   const selected = useMemo(() => {
@@ -105,9 +111,30 @@ export default function App() {
     return new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime();
   }), [items, itemSort]);
 
+  const bulkTagUsage = useMemo(() => {
+    const usage = new Map<string, number>();
+    items.filter(item => selectedItemIds.has(item.id)).forEach(item => {
+      (item.tags || []).forEach(tag => usage.set(tag, (usage.get(tag) || 0) + 1));
+    });
+    return usage;
+  }, [items, selectedItemIds]);
+
+  const bulkTagChoices = useMemo(
+    () => bulkTagAction === 'remove' ? [...bulkTagUsage.keys()].sort((a, b) => a.localeCompare(b)) : allTags,
+    [allTags, bulkTagAction, bulkTagUsage]
+  );
+
   useEffect(() => {
     localStorage.setItem('vault-notes-theme', isDarkMode ? 'dark' : 'light');
   }, [isDarkMode]);
+
+  useEffect(() => {
+    localStorage.setItem('vault-notes-sidebar-width', String(sidebarWidth));
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    localStorage.setItem('vault-notes-list-width', String(listWidth));
+  }, [listWidth]);
 
   useEffect(() => {
     window.vaultApi.getAppVersion().then(setAppVersion).catch(() => undefined);
@@ -931,7 +958,8 @@ export default function App() {
                 <button
                   onClick={() => {
                     setBulkTagAction('add');
-                    setShowBulkTagPicker(current => !current);
+                    setBulkTags(new Set());
+                    setShowBulkTagPicker(true);
                     setShowBulkCollectionPicker(false);
                   }}
                   disabled={selectedItemIds.size === 0 || allTags.length === 0}
@@ -941,10 +969,11 @@ export default function App() {
                 <button
                   onClick={() => {
                     setBulkTagAction('remove');
+                    setBulkTags(new Set());
                     setShowBulkTagPicker(true);
                     setShowBulkCollectionPicker(false);
                   }}
-                  disabled={selectedItemIds.size === 0 || allTags.length === 0}
+                  disabled={selectedItemIds.size === 0 || bulkTagUsage.size === 0}
                 >
                   Remove Tags
                 </button>
@@ -963,11 +992,12 @@ export default function App() {
 
             {isSelectingItems && showBulkTagPicker && (
               <div className="bulk-action-panel">
-                <strong>Choose tags to {bulkTagAction}</strong>
+                <strong>{bulkTagAction === 'remove' ? 'Choose existing tags to remove' : 'Choose tags to add'}</strong>
                 <div className="bulk-choice-list">
-                  {allTags.map(tag => <label key={tag}>
+                  {bulkTagChoices.length === 0 ? <span className="muted-label">The selected items do not have any tags to remove.</span> : bulkTagChoices.map(tag => <label key={tag}>
                     <input type="checkbox" checked={bulkTags.has(tag)} onChange={() => toggleBulkTag(tag)} />
                     <span>#{tag}</span>
+                    {bulkTagUsage.has(tag) && <small>{bulkTagUsage.get(tag)}/{selectedItemIds.size}</small>}
                   </label>)}
                 </div>
                 <div className="bulk-action-footer">
