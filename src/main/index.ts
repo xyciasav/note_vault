@@ -480,8 +480,6 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1540,
     height: 980,
-    minWidth: 1100,
-    minHeight: 700,
     title: 'Vault Notes',
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
@@ -678,53 +676,6 @@ ipcMain.handle('items:uploadFile', async (_event, args: { sourcePath: string; ti
   setTagsForItem(id, args.tags);
   setCollectionsForItem(id, args.collectionIds);
   return getItem(id);
-});
-
-function listFolderFiles(folderPath: string, result: string[] = []) {
-  for (const entry of fs.readdirSync(folderPath, { withFileTypes: true })) {
-    const fullPath = path.join(folderPath, entry.name);
-    if (entry.isDirectory()) listFolderFiles(fullPath, result);
-    else if (entry.isFile()) result.push(fullPath);
-  }
-  return result;
-}
-
-ipcMain.handle('items:linkFolder', async (_event, collectionIds: string[] = []) => {
-  const result = await dialog.showOpenDialog(mainWindow!, {
-    title: 'Link a Folder',
-    properties: ['openDirectory']
-  });
-  if (result.canceled || !result.filePaths[0]) return { canceled: true, linked: 0 };
-
-  const folderPath = result.filePaths[0];
-  const folderName = path.basename(folderPath);
-  const collectionName = `Linked: ${folderName}`;
-  let linkedCollection = db.prepare('SELECT * FROM collections WHERE name = ? COLLATE NOCASE').get(collectionName) as { id: string; name: string } | undefined;
-  if (!linkedCollection) {
-    linkedCollection = { id: randomUUID(), name: collectionName };
-    db.prepare('INSERT INTO collections (id, name, created_at) VALUES (?, ?, ?)').run(linkedCollection.id, linkedCollection.name, nowIso());
-  }
-  const targetCollectionIds = [...new Set([...collectionIds, linkedCollection.id])];
-  const files = listFolderFiles(folderPath).slice(0, 2000);
-  const insert = db.prepare(`
-    INSERT INTO items (id, title, type, body, file_name, file_source_path, file_ext, extracted_text, created_at, updated_at)
-    VALUES (?, ?, 'file', ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  let linked = 0;
-  for (const sourcePath of files) {
-    const ext = path.extname(sourcePath).toLowerCase();
-    const ts = nowIso();
-    const id = randomUUID();
-    const title = path.relative(folderPath, sourcePath);
-    const extracted = await extractText(sourcePath, ext);
-    insert.run(id, title, '', path.basename(sourcePath), sourcePath, ext, extracted, ts, ts);
-    setTagsForItem(id, [folderName]);
-    setCollectionsForItem(id, targetCollectionIds);
-    linked += 1;
-  }
-
-  return { canceled: false, linked, folderPath, folderName, collection: linkedCollection };
 });
 
 ipcMain.handle('items:openFile', async (_event, id: string) => {

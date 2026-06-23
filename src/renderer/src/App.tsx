@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
   FileText,
@@ -67,6 +67,7 @@ export default function App() {
   const [newCollectionName, setNewCollectionName] = useState('');
   const [showNewCollectionInput, setShowNewCollectionInput] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const autoEditIdRef = useRef<string | null>(null);
   const [isSelectingItems, setIsSelectingItems] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [backupDirectory, setBackupDirectory] = useState('');
@@ -206,7 +207,9 @@ export default function App() {
       setDraftBody(selected.body || '');
       setDraftTags((selected.tags || []).join(', '));
       setDraftCollectionIds(selected.collection_ids || []);
-      setIsEditing(false);
+      const shouldEdit = selected.id === autoEditIdRef.current;
+      setIsEditing(shouldEdit);
+      if (shouldEdit) autoEditIdRef.current = null;
     }
 
     if (!selectedId) {
@@ -237,12 +240,12 @@ export default function App() {
       setSearch('');
       setTypeFilter('all');
 
+      autoEditIdRef.current = item.id;
       setSelectedId(item.id);
       setDraftTitle(item.title || 'Untitled note');
       setDraftBody('');
       setDraftTags('');
       setDraftCollectionIds(selectedCollectionId ? [selectedCollectionId] : []);
-      setIsEditing(true);
 
       await refresh({
         search: '',
@@ -379,8 +382,8 @@ export default function App() {
     if (refreshAfter) {
       setAppView('library');
       await refresh();
+      autoEditIdRef.current = item.id;
       setSelectedId(item.id);
-      setIsEditing(true);
       setStatus(`Uploaded ${file.name}.`);
     }
     return item;
@@ -416,6 +419,29 @@ export default function App() {
     });
   }
 
+  useEffect(() => {
+    function navigateItems(event: KeyboardEvent) {
+      if (appView !== 'library' || isSelectingItems) return;
+      if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (items.length === 0) return;
+
+      event.preventDefault();
+      const currentIndex = items.findIndex(item => item.id === selectedId);
+      const delta = event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : 1;
+      const nextIndex = currentIndex === -1
+        ? (delta > 0 ? 0 : items.length - 1)
+        : Math.max(0, Math.min(items.length - 1, currentIndex + delta));
+
+      setSelectedId(items[nextIndex].id);
+    }
+
+    window.addEventListener('keydown', navigateItems);
+    return () => window.removeEventListener('keydown', navigateItems);
+  }, [appView, isSelectingItems, items, selectedId]);
+
   async function deleteSelectedItems() {
     const ids = [...selectedItemIds];
     if (ids.length === 0) return;
@@ -436,20 +462,6 @@ export default function App() {
     const result = await window.vaultApi.addTagsToItems(ids, tags);
     await refresh();
     setStatus(`Added tags to ${result.updated} items.`);
-  }
-
-  async function linkFolder() {
-    try {
-      setStatus('Choose a folder to link...');
-      const result = await window.vaultApi.linkFolder(selectedCollectionId ? [selectedCollectionId] : []);
-      if (!result.canceled) {
-        await refresh();
-        if (result.collection) setSelectedCollectionId(result.collection.id);
-        setStatus(`Linked ${result.linked} files from ${result.folderName}.`);
-      }
-    } catch (err: any) {
-      setStatus(`Could not link folder: ${err.message}`);
-    }
   }
 
   async function onDrop(e: React.DragEvent<HTMLDivElement>) {
@@ -559,10 +571,6 @@ export default function App() {
           <FolderOpen size={18} /> Add Folder
           <input type="file" multiple onChange={onFileInput} {...({ webkitdirectory: '', directory: '' } as any)} />
         </label>
-
-        <button className="secondary-action" onClick={linkFolder}>
-          <FolderOpen size={18} /> Link Folder
-        </button>
 
         <div className="side-section">
           <div className="side-label">Workspace</div>
@@ -717,7 +725,16 @@ export default function App() {
                   className={`item-card ${selectedId === item.id ? 'selected' : ''} ${selectedItemIds.has(item.id) ? 'bulk-selected' : ''}`}
                   role="button"
                   tabIndex={0}
-                  onClick={() => isSelectingItems ? toggleItemSelection(item.id) : setSelectedId(item.id)}
+                  onClick={event => {
+                    if (event.ctrlKey && event.shiftKey) {
+                      setIsSelectingItems(true);
+                      toggleItemSelection(item.id);
+                    } else if (isSelectingItems) {
+                      toggleItemSelection(item.id);
+                    } else {
+                      setSelectedId(item.id);
+                    }
+                  }}
                   onKeyDown={event => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();
@@ -764,6 +781,17 @@ export default function App() {
                 <div className="detail-toolbar">
                   <button onClick={beginEditing} disabled={isEditing}>
                     {isEditing ? 'Editing' : 'Edit'}
+                  </button>
+
+                  {isEditing && <>
+                    <button onClick={saveSelected} disabled={isSaving}>
+                      <Save size={16} /> {isSaving ? 'Saving...' : 'Save'}
+                    </button>
+                    <button onClick={cancelEditing}>Cancel</button>
+                  </>}
+
+                  <button className="danger" onClick={deleteSelected}>
+                    <Trash2 size={16} /> Delete
                   </button>
 
                   {selected?.type === 'file' && (
@@ -900,50 +928,19 @@ export default function App() {
 
                 <textarea
                   className="body-editor"
-                  value={draftBody}
-                  onChange={e => setDraftBody(e.target.value)}
-                  disabled={!isEditing}
+                  value={selected?.type === 'file' ? (selected.extracted_text || 'No readable text was found in this file.') : draftBody}
+                  onChange={e => {
+                    if (selected?.type !== 'file') setDraftBody(e.target.value);
+                  }}
+                  disabled={!isEditing || selected?.type === 'file'}
                   placeholder="Type lesson notes, theory reminders, chord progressions, song ideas, practice notes, links, or anything you want searchable..."
                 />
 
-                {selected?.type === 'file' && (
-                  <div className="file-info">
-                    <strong>File attached:</strong> {selected.file_name}
-                    <br />
-                    <span>
-                      Current starter search reads text from TXT, MD, CSV, JSON, and
-                      LOG files. PDF/DOCX extraction can be added next.
-                    </span>
-                  </div>
-                )}
-
-                {selected?.type === 'file' && selected.extracted_text && (
-                  <section className="file-reader">
-                    <div className="file-reader-header">
-                      <h3>File contents</h3>
-                      <span>Searchable text extracted locally</span>
-                    </div>
-                    <pre>{selected.extracted_text}</pre>
-                  </section>
-                )}
-
                 <div className="detail-toolbar detail-toolbar-bottom">
-                  {isEditing && (
-                    <>
-                      <button onClick={saveSelected} disabled={isSaving}>
-                        <Save size={16} /> {isSaving ? 'Saving...' : 'Save'}
-                      </button>
-                      <button onClick={cancelEditing}>Cancel</button>
-                    </>
-                  )}
-
                   <button onClick={toggleFavorite} disabled={!selected}>
                     <Star size={16} /> {selected?.favorite ? 'Unstar' : 'Star'}
                   </button>
 
-                  <button className="danger" onClick={deleteSelected}>
-                    <Trash2 size={16} /> Delete
-                  </button>
                 </div>
               </>
             )}

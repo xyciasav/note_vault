@@ -14,7 +14,6 @@ contextBridge.exposeInMainWorld('vaultApi', {
   deleteItems: (ids: string[]) => ipcRenderer.invoke('items:deleteMany', ids),
   addTagsToItems: (ids: string[], tags: string[]) => ipcRenderer.invoke('items:addTags', ids, tags),
   uploadFile: (args: { sourcePath: string; title?: string; body?: string; tags?: string[] | string; collectionIds?: string[] }) => ipcRenderer.invoke('items:uploadFile', args),
-  linkFolder: (collectionIds?: string[]) => ipcRenderer.invoke('items:linkFolder', collectionIds),
   openFile: (id: string) => ipcRenderer.invoke('items:openFile', id),
   reindexFiles: () => ipcRenderer.invoke('items:reindexFiles'),
   exportBackup: () => ipcRenderer.invoke('backup:export'),
