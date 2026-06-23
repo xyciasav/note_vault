@@ -53,6 +53,8 @@ export default function App() {
   const [searchTags, setSearchTags] = useState<string[]>([]);
   const [searchTagsOnly, setSearchTagsOnly] = useState(false);
   const [searchResults, setSearchResults] = useState<VaultItem[]>([]);
+  const [showSearchTypeDropdown, setShowSearchTypeDropdown] = useState(false);
+  const [showSearchScopeDropdown, setShowSearchScopeDropdown] = useState(false);
 
   const [draftTitle, setDraftTitle] = useState('');
   const [draftBody, setDraftBody] = useState('');
@@ -71,7 +73,9 @@ export default function App() {
   const autoEditIdRef = useRef<string | null>(null);
   const [isSelectingItems, setIsSelectingItems] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
-  const [bulkCollectionId, setBulkCollectionId] = useState('');
+  const [showBulkTagPicker, setShowBulkTagPicker] = useState(false);
+  const [showBulkCollectionPicker, setShowBulkCollectionPicker] = useState(false);
+  const [bulkTags, setBulkTags] = useState<Set<string>>(new Set());
   const [backupDirectory, setBackupDirectory] = useState('');
   const [backupFrequency, setBackupFrequency] = useState<BackupFrequency>('daily');
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('vault-notes-theme') !== 'light');
@@ -457,24 +461,35 @@ export default function App() {
     setStatus(`Deleted ${result.deleted} items.`);
   }
 
+  function toggleBulkTag(tag: string) {
+    setBulkTags(current => {
+      const next = new Set(current);
+      if (next.has(tag)) next.delete(tag);
+      else next.add(tag);
+      return next;
+    });
+  }
+
   async function addTagsToSelectedItems() {
     const ids = [...selectedItemIds];
     if (ids.length === 0) return;
-    const value = prompt('Add comma-separated tags to the selected items:');
-    const tags = value ? tagStringToArray(value) : [];
+    const tags = [...bulkTags];
     if (tags.length === 0) return;
     const result = await window.vaultApi.addTagsToItems(ids, tags);
     await refresh();
+    setBulkTags(new Set());
+    setShowBulkTagPicker(false);
     setStatus(`Added tags to ${result.updated} items.`);
   }
 
-  async function addCollectionToSelectedItems() {
+  async function addCollectionToSelectedItems(collectionId: string) {
     const ids = [...selectedItemIds];
-    if (ids.length === 0 || !bulkCollectionId) return;
+    if (ids.length === 0 || !collectionId) return;
 
-    const result = await window.vaultApi.addCollectionToItems(ids, bulkCollectionId);
+    const result = await window.vaultApi.addCollectionToItems(ids, collectionId);
     await refresh();
-    const collection = collections.find(entry => entry.id === bulkCollectionId);
+    const collection = collections.find(entry => entry.id === collectionId);
+    setShowBulkCollectionPicker(false);
     setStatus(`Added ${result.updated} items to ${collection?.name || 'the collection'}.`);
   }
 
@@ -722,31 +737,64 @@ export default function App() {
               <button onClick={() => {
                 setIsSelectingItems(current => !current);
                 setSelectedItemIds(new Set());
-                setBulkCollectionId('');
+                setBulkTags(new Set());
+                setShowBulkTagPicker(false);
+                setShowBulkCollectionPicker(false);
               }}>
                 {isSelectingItems ? 'Cancel Select' : 'Select Items'}
               </button>
               {isSelectingItems && <>
                 <span>{selectedItemIds.size} selected</span>
-                <button onClick={addTagsToSelectedItems} disabled={selectedItemIds.size === 0}>Add Tags</button>
-                <select
-                  aria-label="Collection to add"
-                  value={bulkCollectionId}
-                  onChange={event => setBulkCollectionId(event.target.value)}
-                  disabled={collections.length === 0}
-                >
-                  <option value="">Add to collection...</option>
-                  {collections.map(collection => <option key={collection.id} value={collection.id}>{collection.name}</option>)}
-                </select>
                 <button
-                  onClick={addCollectionToSelectedItems}
-                  disabled={selectedItemIds.size === 0 || !bulkCollectionId}
+                  onClick={() => {
+                    setShowBulkTagPicker(current => !current);
+                    setShowBulkCollectionPicker(false);
+                  }}
+                  disabled={selectedItemIds.size === 0 || allTags.length === 0}
                 >
-                  Add Collection
+                  Add Tags
+                </button>
+                <button
+                  onClick={() => {
+                    setShowBulkCollectionPicker(current => !current);
+                    setShowBulkTagPicker(false);
+                  }}
+                  disabled={selectedItemIds.size === 0 || collections.length === 0}
+                >
+                  Add to Collection
                 </button>
                 <button className="danger" onClick={deleteSelectedItems} disabled={selectedItemIds.size === 0}>Delete</button>
               </>}
             </div>
+
+            {isSelectingItems && showBulkTagPicker && (
+              <div className="bulk-action-panel">
+                <strong>Choose tags to add</strong>
+                <div className="bulk-choice-list">
+                  {allTags.map(tag => <label key={tag}>
+                    <input type="checkbox" checked={bulkTags.has(tag)} onChange={() => toggleBulkTag(tag)} />
+                    <span>#{tag}</span>
+                  </label>)}
+                </div>
+                <div className="bulk-action-footer">
+                  <button onClick={() => setShowBulkTagPicker(false)}>Cancel</button>
+                  <button className="primary-action" onClick={addTagsToSelectedItems} disabled={bulkTags.size === 0}>
+                    Add {bulkTags.size || ''} Tag{bulkTags.size === 1 ? '' : 's'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {isSelectingItems && showBulkCollectionPicker && (
+              <div className="bulk-action-panel">
+                <strong>Add selected items to a collection</strong>
+                <div className="bulk-choice-list collection-choice-list">
+                  {collections.map(collection => <button key={collection.id} onClick={() => addCollectionToSelectedItems(collection.id)}>
+                    {collection.name}
+                  </button>)}
+                </div>
+              </div>
+            )}
 
             <div className="items-list">
               {items.map(item => (
@@ -755,6 +803,9 @@ export default function App() {
                   className={`item-card ${selectedId === item.id ? 'selected' : ''} ${selectedItemIds.has(item.id) ? 'bulk-selected' : ''}`}
                   role="button"
                   tabIndex={0}
+                  onMouseDown={event => {
+                    if (event.ctrlKey || event.metaKey || event.shiftKey) event.preventDefault();
+                  }}
                   onClick={event => {
                     if (event.ctrlKey || event.metaKey || event.shiftKey) {
                       setIsSelectingItems(true);
@@ -822,6 +873,10 @@ export default function App() {
 
                   <button className="danger" onClick={deleteSelected}>
                     <Trash2 size={16} /> Delete
+                  </button>
+
+                  <button onClick={toggleFavorite} disabled={!selected}>
+                    <Star size={16} /> {selected?.favorite ? 'Unstar' : 'Star'}
                   </button>
 
                   {selected?.type === 'file' && (
@@ -966,12 +1021,6 @@ export default function App() {
                   placeholder="Type lesson notes, theory reminders, chord progressions, song ideas, practice notes, links, or anything you want searchable..."
                 />
 
-                <div className="detail-toolbar detail-toolbar-bottom">
-                  <button onClick={toggleFavorite} disabled={!selected}>
-                    <Star size={16} /> {selected?.favorite ? 'Unstar' : 'Star'}
-                  </button>
-
-                </div>
               </>
             )}
 
@@ -1002,26 +1051,78 @@ export default function App() {
           </div>
 
           <div className="search-filters">
-            <label>
-              Type
-              <select
-                value={searchType}
-                onChange={e => setSearchType(e.target.value as TypeFilter)}
+            <div className="search-tag-dropdown-wrap">
+              <div className="search-filter-label">Type</div>
+              <button
+                type="button"
+                className="search-tag-dropdown-button"
+                onClick={() => {
+                  setShowSearchTypeDropdown(current => !current);
+                  setShowSearchScopeDropdown(false);
+                  setShowSearchTagDropdown(false);
+                }}
               >
-                <option value="all">All Items</option>
-                <option value="note">Notes</option>
-                <option value="file">Files</option>
-              </select>
-            </label>
+                {searchType === 'all' ? 'All Items' : searchType === 'note' ? 'Notes' : 'Files'}
+                <span>▾</span>
+              </button>
+              {showSearchTypeDropdown && (
+                <div className="search-tag-dropdown-panel search-option-panel">
+                  {([['all', 'All Items'], ['note', 'Notes'], ['file', 'Files']] as const).map(([value, label]) => (
+                    <button
+                      type="button"
+                      key={value}
+                      className={searchType === value ? 'active' : ''}
+                      onClick={() => {
+                        setSearchType(value);
+                        setShowSearchTypeDropdown(false);
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
-            <label className="tags-only-toggle">
-              <input
-                type="checkbox"
-                checked={searchTagsOnly}
-                onChange={event => setSearchTagsOnly(event.target.checked)}
-              />
-              Search tags only
-            </label>
+            <div className="search-tag-dropdown-wrap">
+              <div className="search-filter-label">Search in</div>
+              <button
+                type="button"
+                className="search-tag-dropdown-button"
+                onClick={() => {
+                  setShowSearchScopeDropdown(current => !current);
+                  setShowSearchTypeDropdown(false);
+                  setShowSearchTagDropdown(false);
+                }}
+              >
+                {searchTagsOnly ? 'Tags Only' : 'Everything'}
+                <span>▾</span>
+              </button>
+              {showSearchScopeDropdown && (
+                <div className="search-tag-dropdown-panel search-option-panel">
+                  <button
+                    type="button"
+                    className={!searchTagsOnly ? 'active' : ''}
+                    onClick={() => {
+                      setSearchTagsOnly(false);
+                      setShowSearchScopeDropdown(false);
+                    }}
+                  >
+                    Everything
+                  </button>
+                  <button
+                    type="button"
+                    className={searchTagsOnly ? 'active' : ''}
+                    onClick={() => {
+                      setSearchTagsOnly(true);
+                      setShowSearchScopeDropdown(false);
+                    }}
+                  >
+                    Tags Only
+                  </button>
+                </div>
+              )}
+            </div>
 
 <div className="search-tag-dropdown-wrap">
   <div className="search-filter-label">Tags</div>
@@ -1029,7 +1130,11 @@ export default function App() {
   <button
     type="button"
     className="search-tag-dropdown-button"
-    onClick={() => setShowSearchTagDropdown(!showSearchTagDropdown)}
+    onClick={() => {
+      setShowSearchTagDropdown(current => !current);
+      setShowSearchTypeDropdown(false);
+      setShowSearchScopeDropdown(false);
+    }}
   >
     {searchTags.length === 0
       ? 'All Tags'
@@ -1129,11 +1234,12 @@ export default function App() {
           <div className="search-workspace-header">
             <div>
               <h1>Settings</h1>
-              <p>Manage your vault data and its automatic backups.</p>
+              <p>Backup, maintenance, appearance, and updates—kept in one tidy place.</p>
             </div>
           </div>
 
-          <section className="settings-section">
+          <div className="settings-grid">
+          <section className="settings-section settings-compact">
             <h2>Appearance</h2>
             <p>Use a darker palette that is easier on the eyes during long writing or practice sessions.</p>
             <label className="theme-toggle">
@@ -1142,7 +1248,7 @@ export default function App() {
             </label>
           </section>
 
-          <section className="settings-section">
+          <section className="settings-section settings-backup">
             <h2>Backup & Export</h2>
             <p>
               Export creates a normal ZIP with Markdown notes, your original files, and an
@@ -1186,7 +1292,7 @@ export default function App() {
             </div>
           </section>
 
-          <section className="settings-section">
+          <section className="settings-section settings-compact">
             <h2>Updates</h2>
             <p>
               Vault Notes checks GitHub Releases when it opens. When a newer version is available,
@@ -1197,16 +1303,17 @@ export default function App() {
             </div>
           </section>
 
-          <section className="settings-section">
-            <h2>Searchable files</h2>
+          <section className="settings-section settings-compact settings-maintenance">
+            <h2>Maintenance</h2>
             <p>
-              Vault Notes indexes TXT, Markdown, CSV, JSON, LOG, and text-based PDF files so
-              their contents can appear in search. Re-index after adding this feature to an existing vault.
+              New uploads are indexed automatically. Rebuild the search index only if you added files
+              before this feature or if a file’s text is missing from search.
             </p>
             <div className="settings-actions">
-              <button onClick={reindexFiles}>Re-index Files</button>
+              <button onClick={reindexFiles}>Rebuild Search Index</button>
             </div>
           </section>
+          </div>
 
           {status && <div className="status-bar">{status}</div>}
         </main>
