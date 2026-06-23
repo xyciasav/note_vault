@@ -51,6 +51,7 @@ export default function App() {
   const [searchText, setSearchText] = useState('');
   const [searchType, setSearchType] = useState<TypeFilter>('all');
   const [searchTags, setSearchTags] = useState<string[]>([]);
+  const [searchTagsOnly, setSearchTagsOnly] = useState(false);
   const [searchResults, setSearchResults] = useState<VaultItem[]>([]);
 
   const [draftTitle, setDraftTitle] = useState('');
@@ -70,6 +71,7 @@ export default function App() {
   const autoEditIdRef = useRef<string | null>(null);
   const [isSelectingItems, setIsSelectingItems] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+  const [bulkCollectionId, setBulkCollectionId] = useState('');
   const [backupDirectory, setBackupDirectory] = useState('');
   const [backupFrequency, setBackupFrequency] = useState<BackupFrequency>('daily');
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('vault-notes-theme') !== 'light');
@@ -121,19 +123,20 @@ export default function App() {
     setStatus('Searching...');
 
     const results = await window.vaultApi.listItems({
-      search: searchText,
+      search: searchTagsOnly ? '' : searchText,
       tag: '',
       type: searchType
     });
 
-    const filteredResults =
-      searchTags.length === 0
-        ? results
-        : results.filter(item =>
-            searchTags.every(tag =>
-              (item.tags || []).some(itemTag => itemTag.toLowerCase() === tag.toLowerCase())
-            )
-          );
+    const tagQuery = searchText.trim().toLowerCase();
+    const filteredResults = results.filter(item => {
+      const matchesTypedTag = !searchTagsOnly || !tagQuery ||
+        (item.tags || []).some(tag => tag.toLowerCase().includes(tagQuery));
+      const matchesSelectedTags = searchTags.length === 0 || searchTags.every(tag =>
+        (item.tags || []).some(itemTag => itemTag.toLowerCase() === tag.toLowerCase())
+      );
+      return matchesTypedTag && matchesSelectedTags;
+    });
 
     setSearchResults(filteredResults);
     setStatus(`Found ${filteredResults.length} result${filteredResults.length === 1 ? '' : 's'}.`);
@@ -145,6 +148,7 @@ export default function App() {
   function clearFullSearch() {
     setSearchText('');
     setSearchTags([]);
+    setSearchTagsOnly(false);
     setSearchType('all');
     setSearchResults([]);
     setStatus('Search cleared.');
@@ -199,7 +203,7 @@ export default function App() {
 
     return () => window.clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [appView, searchText, searchTags, searchType]);
+}, [appView, searchText, searchTags, searchType, searchTagsOnly]);
 
   useEffect(() => {
     if (selected) {
@@ -464,6 +468,16 @@ export default function App() {
     setStatus(`Added tags to ${result.updated} items.`);
   }
 
+  async function addCollectionToSelectedItems() {
+    const ids = [...selectedItemIds];
+    if (ids.length === 0 || !bulkCollectionId) return;
+
+    const result = await window.vaultApi.addCollectionToItems(ids, bulkCollectionId);
+    await refresh();
+    const collection = collections.find(entry => entry.id === bulkCollectionId);
+    setStatus(`Added ${result.updated} items to ${collection?.name || 'the collection'}.`);
+  }
+
   async function onDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
     setIsDragging(false);
@@ -708,12 +722,28 @@ export default function App() {
               <button onClick={() => {
                 setIsSelectingItems(current => !current);
                 setSelectedItemIds(new Set());
+                setBulkCollectionId('');
               }}>
                 {isSelectingItems ? 'Cancel Select' : 'Select Items'}
               </button>
               {isSelectingItems && <>
                 <span>{selectedItemIds.size} selected</span>
                 <button onClick={addTagsToSelectedItems} disabled={selectedItemIds.size === 0}>Add Tags</button>
+                <select
+                  aria-label="Collection to add"
+                  value={bulkCollectionId}
+                  onChange={event => setBulkCollectionId(event.target.value)}
+                  disabled={collections.length === 0}
+                >
+                  <option value="">Add to collection...</option>
+                  {collections.map(collection => <option key={collection.id} value={collection.id}>{collection.name}</option>)}
+                </select>
+                <button
+                  onClick={addCollectionToSelectedItems}
+                  disabled={selectedItemIds.size === 0 || !bulkCollectionId}
+                >
+                  Add Collection
+                </button>
                 <button className="danger" onClick={deleteSelectedItems} disabled={selectedItemIds.size === 0}>Delete</button>
               </>}
             </div>
@@ -726,7 +756,7 @@ export default function App() {
                   role="button"
                   tabIndex={0}
                   onClick={event => {
-                    if (event.ctrlKey && event.shiftKey) {
+                    if (event.ctrlKey || event.metaKey || event.shiftKey) {
                       setIsSelectingItems(true);
                       toggleItemSelection(item.id);
                     } else if (isSelectingItems) {
@@ -982,6 +1012,15 @@ export default function App() {
                 <option value="note">Notes</option>
                 <option value="file">Files</option>
               </select>
+            </label>
+
+            <label className="tags-only-toggle">
+              <input
+                type="checkbox"
+                checked={searchTagsOnly}
+                onChange={event => setSearchTagsOnly(event.target.checked)}
+              />
+              Search tags only
             </label>
 
 <div className="search-tag-dropdown-wrap">

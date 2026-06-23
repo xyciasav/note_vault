@@ -655,6 +655,20 @@ ipcMain.handle('items:addTags', (_event, ids: string[], tags: string[] | string)
   return { updated: ids.length };
 });
 
+ipcMain.handle('items:addCollection', (_event, ids: string[], collectionId: string) => {
+  const collection = db.prepare('SELECT id FROM collections WHERE id = ?').get(collectionId);
+  if (!collection) throw new Error('Collection not found');
+
+  let updated = 0;
+  for (const id of ids) {
+    const item = getItem(id);
+    if (!item) continue;
+    setCollectionsForItem(id, [...item.collection_ids, collectionId]);
+    updated += 1;
+  }
+  return { updated };
+});
+
 ipcMain.handle('items:uploadFile', async (_event, args: { sourcePath: string; title?: string; body?: string; tags?: string[] | string; collectionIds?: string[] }) => {
   if (!args.sourcePath || !fs.existsSync(args.sourcePath)) throw new Error('File does not exist');
 

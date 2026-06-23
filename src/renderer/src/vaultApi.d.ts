@@ -33,6 +33,7 @@ declare global {
       deleteItem: (id: string) => Promise<{ ok: boolean }>;
       deleteItems: (ids: string[]) => Promise<{ deleted: number }>;
       addTagsToItems: (ids: string[], tags: string[]) => Promise<{ updated: number }>;
+      addCollectionToItems: (ids: string[], collectionId: string) => Promise<{ updated: number }>;
       uploadFile: (args: { sourcePath: string; title?: string; body?: string; tags?: string[] | string; collectionIds?: string[] }) => Promise<VaultItem>;
       openFile: (id: string) => Promise<{ ok: boolean }>;
       reindexFiles: () => Promise<{ indexed: number }>;
