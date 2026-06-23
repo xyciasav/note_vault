@@ -20,6 +20,7 @@ type VaultSettings = {
   backupFrequency: BackupFrequency;
   lastAutoBackupAt?: string;
   skippedReleaseTag?: string;
+  lastLaunchedVersion?: string;
 };
 let vaultSettings: VaultSettings;
 
@@ -343,6 +344,36 @@ function compareVersions(left: string, right: string) {
 type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
+const whatsNewByVersion: Record<string, string[]> = {
+  '1.2.16': [
+    'Collections now have an expandable tree view with clickable notes and files.',
+    'Search results open in an in-app preview before you decide to open them in the Library.',
+    'Search can be narrowed to a collection, and saved searches are easier to navigate.'
+  ]
+};
+
+async function showWhatsNewIfUpdated() {
+  const currentVersion = app.getVersion();
+  const previousVersion = vaultSettings.lastLaunchedVersion;
+  const changes = whatsNewByVersion[currentVersion] || ['General improvements and fixes.'];
+
+  if (previousVersion && previousVersion !== currentVersion) {
+    await dialog.showMessageBox(mainWindow!, {
+      type: 'info',
+      title: 'Vault Notes updated',
+      message: `You’re now using Vault Notes v${currentVersion}.`,
+      detail: `What’s new:\n\n${changes.map(change => `• ${change}`).join('\n')}`,
+      buttons: ['Got it'],
+      defaultId: 0
+    });
+  }
+
+  if (previousVersion !== currentVersion) {
+    vaultSettings.lastLaunchedVersion = currentVersion;
+    saveSettings();
+  }
+}
+
 function fetchLatestRelease(): Promise<GithubRelease | null> {
   return new Promise(resolve => {
     const request = https.get('https://api.github.com/repos/xyciasav/note_vault/releases/latest', {
@@ -501,7 +532,8 @@ app.whenReady().then(() => {
   initDb();
   createAutoBackupIfNeeded();
   createWindow();
-  mainWindow?.once('ready-to-show', () => {
+  mainWindow?.once('ready-to-show', async () => {
+    await showWhatsNewIfUpdated().catch(() => undefined);
     checkForUpdates().catch(() => undefined);
   });
 
@@ -560,6 +592,22 @@ ipcMain.handle('tags:list', () => {
 
 ipcMain.handle('collections:list', () => {
   return db.prepare('SELECT * FROM collections ORDER BY name').all();
+});
+
+ipcMain.handle('collections:tree', () => {
+  const collectionRows = db.prepare('SELECT * FROM collections ORDER BY name').all() as any[];
+  const itemsForCollection = db.prepare(`
+    SELECT items.*
+    FROM items
+    JOIN item_collections ON item_collections.item_id = items.id
+    WHERE item_collections.collection_id = ?
+    ORDER BY items.updated_at DESC
+  `);
+
+  return collectionRows.map(collection => ({
+    ...collection,
+    items: (itemsForCollection.all(collection.id) as any[]).map(rowToItem)
+  }));
 });
 
 ipcMain.handle('collections:create', (_event, name: string) => {
