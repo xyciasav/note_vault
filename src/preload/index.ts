@@ -6,7 +6,6 @@ contextBridge.exposeInMainWorld('vaultApi', {
   listItems: (args?: { search?: string; tag?: string; type?: string; collectionId?: string }) => ipcRenderer.invoke('items:list', args),
   listTags: () => ipcRenderer.invoke('tags:list'),
   listCollections: () => ipcRenderer.invoke('collections:list'),
-  getCollectionTree: () => ipcRenderer.invoke('collections:tree'),
   createCollection: (name: string) => ipcRenderer.invoke('collections:create', name),
   deleteCollection: (id: string) => ipcRenderer.invoke('collections:delete', id),
   createNote: (args: { title: string; body?: string; tags?: string[] | string; collectionIds?: string[] }) => ipcRenderer.invoke('items:createNote', args),

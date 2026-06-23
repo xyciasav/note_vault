@@ -19,7 +19,6 @@ import type { VaultItem } from './vaultApi';
 type TypeFilter = 'all' | 'note' | 'file';
 type AppView = 'library' | 'search' | 'settings';
 type BackupFrequency = 'on-close' | 'daily' | 'weekly' | 'never';
-type CollectionTreeEntry = { id: string; name: string; created_at: string; items: VaultItem[] };
 
 function tagStringToArray(value: string) {
   return value
@@ -41,7 +40,6 @@ export default function App() {
   const [items, setItems] = useState<VaultItem[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
   const [collections, setCollections] = useState<{ id: string; name: string }[]>([]);
-  const [collectionTree, setCollectionTree] = useState<CollectionTreeEntry[]>([]);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -81,7 +79,6 @@ export default function App() {
   const [showBulkTagPicker, setShowBulkTagPicker] = useState(false);
   const [showBulkCollectionPicker, setShowBulkCollectionPicker] = useState(false);
   const [bulkTags, setBulkTags] = useState<Set<string>>(new Set());
-  const [expandedCollectionIds, setExpandedCollectionIds] = useState<Set<string>>(new Set());
   const [backupDirectory, setBackupDirectory] = useState('');
   const [backupFrequency, setBackupFrequency] = useState<BackupFrequency>('daily');
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('vault-notes-theme') !== 'light');
@@ -125,9 +122,6 @@ export default function App() {
 
     const loadedCollections = await window.vaultApi.listCollections();
     setCollections(loadedCollections);
-
-    const loadedCollectionTree = await window.vaultApi.getCollectionTree();
-    setCollectionTree(loadedCollectionTree);
 
     return loadedItems;
   }
@@ -392,22 +386,6 @@ export default function App() {
   function selectCollection(collectionId: string | null) {
     setSelectedCollectionId(collectionId);
     setSelectedId(null);
-    setIsEditing(false);
-  }
-
-  function toggleCollectionTree(collectionId: string) {
-    setExpandedCollectionIds(current => {
-      const next = new Set(current);
-      if (next.has(collectionId)) next.delete(collectionId);
-      else next.add(collectionId);
-      return next;
-    });
-  }
-
-  function openCollectionTreeItem(collectionId: string, item: VaultItem) {
-    setSelectedCollectionId(collectionId);
-    setItems(current => [item, ...current.filter(existing => existing.id !== item.id)]);
-    setSelectedId(item.id);
     setIsEditing(false);
   }
 
@@ -722,49 +700,15 @@ export default function App() {
             All Collections
           </button>
 
-          <div className="collection-tree">
-            {collectionTree.map(collection => {
-              const isExpanded = expandedCollectionIds.has(collection.id);
-              return <div className="collection-tree-node" key={collection.id}>
-                <div className="collection-tree-row">
-                  <button
-                    type="button"
-                    className="collection-tree-toggle"
-                    aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${collection.name}`}
-                    onClick={() => toggleCollectionTree(collection.id)}
-                  >
-                    {isExpanded ? '▾' : '▸'}
-                  </button>
-                  <button
-                    className={`collection-tree-collection ${selectedCollectionId === collection.id ? 'active' : ''}`}
-                    onClick={() => selectCollection(collection.id)}
-                  >
-                    <FolderOpen size={16} />
-                    <span>{collection.name}</span>
-                    <small>{collection.items.length}</small>
-                  </button>
-                </div>
-
-                {isExpanded && (
-                  <div className="collection-tree-items">
-                    {collection.items.length === 0 ? (
-                      <span className="collection-tree-empty">Empty collection</span>
-                    ) : collection.items.map(item => (
-                      <button
-                        type="button"
-                        key={item.id}
-                        className={selectedId === item.id ? 'active' : ''}
-                        onClick={() => openCollectionTreeItem(collection.id, item)}
-                      >
-                        {item.type === 'note' ? <FileText size={14} /> : <FolderOpen size={14} />}
-                        <span>{item.title || 'Untitled note'}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>;
-            })}
-          </div>
+          {collections.map(collection => (
+            <button
+              key={collection.id}
+              className={selectedCollectionId === collection.id ? 'active' : ''}
+              onClick={() => selectCollection(collection.id)}
+            >
+              <FolderOpen size={16} /> {collection.name}
+            </button>
+          ))}
 
           {showNewCollectionInput ? (
             <div

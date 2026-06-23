@@ -26,7 +26,6 @@ declare global {
       listItems: (args?: { search?: string; tag?: string; type?: string; collectionId?: string }) => Promise<VaultItem[]>;
       listTags: () => Promise<{ name: string }[]>;
       listCollections: () => Promise<{ id: string; name: string; created_at: string }[]>;
-      getCollectionTree: () => Promise<Array<{ id: string; name: string; created_at: string; items: VaultItem[] }>>;
       createCollection: (name: string) => Promise<{ id: string; name: string; created_at: string }>;
       deleteCollection: (id: string) => Promise<{ ok: boolean }>;
       createNote: (args: { title: string; body?: string; tags?: string[] | string; collectionIds?: string[] }) => Promise<VaultItem>;
