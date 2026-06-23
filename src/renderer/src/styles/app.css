@@ -125,7 +125,7 @@ button:active:not(:disabled) {
 .tag-add-row input {
   flex: 1;
 }
-.saved-tags-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 12px; }
+.saved-tags-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; max-height: 190px; overflow-y: auto; margin-top: 12px; padding-right: 4px; }
 .saved-tags-picker button { border: 1px solid #bae6fd; border-radius: 999px; padding: 4px 9px; background: #f0f9ff; color: #075985; cursor: pointer; font-size: 12px; }
 .saved-tags-picker button.active { background: #2563eb; color: #fff; border-color: #2563eb; }
 
@@ -965,6 +965,16 @@ body {
   padding: 36px 44px 44px;
   overflow: auto;
 }
+
+.search-preview-backdrop { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 24px; background: rgba(2, 6, 23, 0.62); backdrop-filter: blur(3px); }
+.search-preview-dialog { width: min(760px, 100%); max-height: min(80vh, 760px); display: flex; flex-direction: column; gap: 16px; overflow: hidden; padding: 22px; border: 1px solid #334155; border-radius: 18px; background: #0f172a; color: #e2e8f0; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.4); }
+.search-preview-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.search-preview-header h2 { margin: 9px 0 5px; color: #f8fafc; }
+.search-preview-header small { color: #94a3b8; }
+.search-preview-header button, .search-preview-actions button { border: 1px solid #475569; border-radius: 9px; padding: 8px 11px; background: #172033; color: #dbeafe; cursor: pointer; }
+.search-preview-content { flex: 1; min-height: 180px; margin: 0; overflow: auto; white-space: pre-wrap; padding: 14px; border: 1px solid #334155; border-radius: 12px; background: #0b1220; color: #e2e8f0; font: 13px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.search-preview-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.search-preview-actions .primary-action { border-color: #3b82f6; background: #2563eb; color: #fff; }
 
 .settings-grid {
   display: grid;

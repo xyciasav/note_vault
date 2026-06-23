@@ -55,6 +55,9 @@ export default function App() {
   const [searchResults, setSearchResults] = useState<VaultItem[]>([]);
   const [showSearchTypeDropdown, setShowSearchTypeDropdown] = useState(false);
   const [showSearchScopeDropdown, setShowSearchScopeDropdown] = useState(false);
+  const [searchCollectionId, setSearchCollectionId] = useState('');
+  const [showSearchCollectionDropdown, setShowSearchCollectionDropdown] = useState(false);
+  const [searchPreviewItem, setSearchPreviewItem] = useState<VaultItem | null>(null);
 
   const [draftTitle, setDraftTitle] = useState('');
   const [draftBody, setDraftBody] = useState('');
@@ -80,6 +83,7 @@ export default function App() {
   const [backupFrequency, setBackupFrequency] = useState<BackupFrequency>('daily');
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('vault-notes-theme') !== 'light');
   const [appVersion, setAppVersion] = useState('');
+  const itemsListRef = useRef<HTMLDivElement | null>(null);
 
   const selected = useMemo(() => {
     if (!selectedId) return null;
@@ -129,7 +133,8 @@ export default function App() {
     const results = await window.vaultApi.listItems({
       search: searchTagsOnly ? '' : searchText,
       tag: '',
-      type: searchType
+      type: searchType,
+      collectionId: searchCollectionId
     });
 
     const tagQuery = searchText.trim().toLowerCase();
@@ -153,6 +158,7 @@ export default function App() {
     setSearchText('');
     setSearchTags([]);
     setSearchTagsOnly(false);
+    setSearchCollectionId('');
     setSearchType('all');
     setSearchResults([]);
     setStatus('Search cleared.');
@@ -169,8 +175,7 @@ export default function App() {
 }
 
   function openSearchResult(item: VaultItem) {
-    setSelectedId(item.id);
-    setAppView('library');
+    setSearchPreviewItem(item);
   }
 
   useEffect(() => {
@@ -207,7 +212,7 @@ export default function App() {
 
     return () => window.clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [appView, searchText, searchTags, searchType, searchTagsOnly]);
+}, [appView, searchText, searchTags, searchType, searchTagsOnly, searchCollectionId]);
 
   useEffect(() => {
     if (selected) {
@@ -288,8 +293,17 @@ export default function App() {
         collectionIds: draftCollectionIds
       });
 
-      await refresh();
+      const scrollTop = itemsListRef.current?.scrollTop;
+      setItems(current => current.map(item => item.id === updated.id ? updated : item));
+      window.vaultApi.listTags()
+        .then(tags => setAllTags(tags.map((tag: any) => tag.name)))
+        .catch(() => undefined);
       setSelectedId(updated.id);
+      if (scrollTop !== undefined) {
+        requestAnimationFrame(() => {
+          if (itemsListRef.current) itemsListRef.current.scrollTop = scrollTop;
+        });
+      }
 
       const time = new Date().toLocaleTimeString([], {
         hour: 'numeric',
@@ -313,7 +327,7 @@ export default function App() {
       favorite: !selected.favorite
     });
 
-    await refresh();
+    setItems(current => current.map(item => item.id === updated.id ? updated : item));
     setSelectedId(updated.id);
   }
 
@@ -357,6 +371,12 @@ export default function App() {
     setSelectedCollectionId(null);
     await refresh();
     setStatus(`Collection deleted: ${activeCollection.name}`);
+  }
+
+  function selectCollection(collectionId: string | null) {
+    setSelectedCollectionId(collectionId);
+    setSelectedId(null);
+    setIsEditing(false);
   }
 
   function beginEditing() {
@@ -665,7 +685,7 @@ export default function App() {
 
           <button
             className={selectedCollectionId === null ? 'active' : ''}
-            onClick={() => setSelectedCollectionId(null)}
+            onClick={() => selectCollection(null)}
           >
             All Collections
           </button>
@@ -674,7 +694,7 @@ export default function App() {
             <button
               key={collection.id}
               className={selectedCollectionId === collection.id ? 'active' : ''}
-              onClick={() => setSelectedCollectionId(collection.id)}
+              onClick={() => selectCollection(collection.id)}
             >
               <FolderOpen size={16} /> {collection.name}
             </button>
@@ -796,7 +816,7 @@ export default function App() {
               </div>
             )}
 
-            <div className="items-list">
+            <div className="items-list" ref={itemsListRef}>
               {items.map(item => (
                 <div
                   key={item.id}
@@ -1060,6 +1080,7 @@ export default function App() {
                   setShowSearchTypeDropdown(current => !current);
                   setShowSearchScopeDropdown(false);
                   setShowSearchTagDropdown(false);
+                  setShowSearchCollectionDropdown(false);
                 }}
               >
                 {searchType === 'all' ? 'All Items' : searchType === 'note' ? 'Notes' : 'Files'}
@@ -1093,6 +1114,7 @@ export default function App() {
                   setShowSearchScopeDropdown(current => !current);
                   setShowSearchTypeDropdown(false);
                   setShowSearchTagDropdown(false);
+                  setShowSearchCollectionDropdown(false);
                 }}
               >
                 {searchTagsOnly ? 'Tags Only' : 'Everything'}
@@ -1124,6 +1146,52 @@ export default function App() {
               )}
             </div>
 
+            <div className="search-tag-dropdown-wrap">
+              <div className="search-filter-label">Collection</div>
+              <button
+                type="button"
+                className="search-tag-dropdown-button"
+                onClick={() => {
+                  setShowSearchCollectionDropdown(current => !current);
+                  setShowSearchTypeDropdown(false);
+                  setShowSearchScopeDropdown(false);
+                  setShowSearchTagDropdown(false);
+                }}
+              >
+                {searchCollectionId
+                  ? collections.find(collection => collection.id === searchCollectionId)?.name || 'All Collections'
+                  : 'All Collections'}
+                <span>▾</span>
+              </button>
+              {showSearchCollectionDropdown && (
+                <div className="search-tag-dropdown-panel search-option-panel">
+                  <button
+                    type="button"
+                    className={!searchCollectionId ? 'active' : ''}
+                    onClick={() => {
+                      setSearchCollectionId('');
+                      setShowSearchCollectionDropdown(false);
+                    }}
+                  >
+                    All Collections
+                  </button>
+                  {collections.map(collection => (
+                    <button
+                      type="button"
+                      key={collection.id}
+                      className={searchCollectionId === collection.id ? 'active' : ''}
+                      onClick={() => {
+                        setSearchCollectionId(collection.id);
+                        setShowSearchCollectionDropdown(false);
+                      }}
+                    >
+                      {collection.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
 <div className="search-tag-dropdown-wrap">
   <div className="search-filter-label">Tags</div>
 
@@ -1134,6 +1202,7 @@ export default function App() {
       setShowSearchTagDropdown(current => !current);
       setShowSearchTypeDropdown(false);
       setShowSearchScopeDropdown(false);
+      setShowSearchCollectionDropdown(false);
     }}
   >
     {searchTags.length === 0
@@ -1226,6 +1295,48 @@ export default function App() {
               ))
             )}
           </div>
+
+          {searchPreviewItem && (
+            <div className="search-preview-backdrop" onMouseDown={() => setSearchPreviewItem(null)}>
+              <section
+                className="search-preview-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-label={`Preview ${searchPreviewItem.title || 'item'}`}
+                onMouseDown={event => event.stopPropagation()}
+              >
+                <div className="search-preview-header">
+                  <div>
+                    <span className="item-type">{searchPreviewItem.type}</span>
+                    <h2>{searchPreviewItem.title || 'Untitled note'}</h2>
+                    <small>Updated {formatDate(searchPreviewItem.updated_at)}</small>
+                  </div>
+                  <button onClick={() => setSearchPreviewItem(null)}>Close</button>
+                </div>
+                <div className="tag-row">
+                  {(searchPreviewItem.tags || []).map(tag => <span key={tag}>#{tag}</span>)}
+                </div>
+                <pre className="search-preview-content">
+                  {searchPreviewItem.type === 'file'
+                    ? searchPreviewItem.extracted_text || 'No readable text was found in this file.'
+                    : searchPreviewItem.body || 'No notes yet.'}
+                </pre>
+                <div className="search-preview-actions">
+                  <button onClick={() => setSearchPreviewItem(null)}>Keep Searching</button>
+                  <button
+                    className="primary-action"
+                    onClick={() => {
+                      setSelectedId(searchPreviewItem.id);
+                      setSearchPreviewItem(null);
+                      setAppView('library');
+                    }}
+                  >
+                    Open in Library
+                  </button>
+                </div>
+              </section>
+            </div>
+          )}
 
           {status && <div className="status-bar">{status}</div>}
         </main>
