@@ -352,6 +352,14 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '1.2.25': [
+    'Collections now use the same unified edit-picker pattern as tags.',
+    'Current collections are shown as a simple summary and can be changed from one matching dropdown.'
+  ],
+  '1.2.24': [
+    'Editing tags is now handled through one unified picker with current tags pre-selected.',
+    'The tag picker lets you toggle saved tags or create a new tag without separate add and remove controls.'
+  ],
   '1.2.23': [
     'Sidebar and library pane sizes now persist after restarting the app.'
   ],

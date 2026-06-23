@@ -71,6 +71,8 @@ export default function App() {
   const [isSaving, setIsSaving] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [newTagText, setNewTagText] = useState('');
+  const [showEditTagPicker, setShowEditTagPicker] = useState(false);
+  const [showEditCollectionPicker, setShowEditCollectionPicker] = useState(false);
   const [showSearchTagDropdown, setShowSearchTagDropdown] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
   const [showNewCollectionInput, setShowNewCollectionInput] = useState(false);
@@ -1123,35 +1125,41 @@ export default function App() {
 
                 <label className="field-label">Collection</label>
                 <div className="collection-picker">
-                  {collections.length === 0 ? (
-                    <span className="muted-label">Create a collection from the sidebar to group this item.</span>
-                  ) : collections.map(collection => (
-                    <label key={collection.id}>
-                      <input
-                        type="checkbox"
-                        checked={draftCollectionIds.includes(collection.id)}
-                        disabled={!isEditing}
-                        onChange={() => setDraftCollectionIds(current =>
-                          current.includes(collection.id)
-                            ? current.filter(id => id !== collection.id)
-                            : [...current, collection.id]
-                        )}
-                      />
-                      {collection.name}
-                    </label>
-                  ))}
+                  {draftCollectionIds.length === 0 ? <span className="muted-label">No collections yet.</span> : collections
+                    .filter(collection => draftCollectionIds.includes(collection.id))
+                    .map(collection => <span key={collection.id}>{collection.name}</span>)}
                 </div>
+                {isEditing && <div className="edit-tags-wrap">
+                  <button type="button" className="edit-tags-button" onClick={() => setShowEditCollectionPicker(current => !current)}>
+                    Edit Collections <span>▾</span>
+                  </button>
+                  {showEditCollectionPicker && <div className="edit-tags-panel">
+                    <div className="edit-tags-list">
+                      {collections.length === 0 ? <span className="muted-label">Create a collection from the sidebar first.</span> : collections.map(collection => (
+                        <label key={collection.id}>
+                          <input
+                            type="checkbox"
+                            checked={draftCollectionIds.includes(collection.id)}
+                            onChange={() => setDraftCollectionIds(current => current.includes(collection.id)
+                              ? current.filter(id => id !== collection.id)
+                              : [...current, collection.id]
+                            )}
+                          />
+                          <span>{collection.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>}
+                </div>}
                 <div className="muted-label">An item can belong to more than one project.</div>
 
-                <label className="field-label">
-                  Tags <span className="muted-label">(add tags one at a time)</span>
-                </label>
+                <label className="field-label">Tags</label>
 
                 <div className="tag-editor">
                   {tagStringToArray(draftTags).map(tag => (
                     <span className="tag-chip-editable" key={tag}>
                       #{tag}
-                      {isEditing && <button
+                      {false && <button
                         type="button"
                         title={`Remove ${tag}`}
                         onClick={() => {
@@ -1169,65 +1177,39 @@ export default function App() {
                   )}
                 </div>
 
-                <div className="tag-add-row">
-                  <input
-                    className="tags-input"
-                    value={newTagText}
-                    disabled={!isEditing}
-                    onChange={e => setNewTagText(e.target.value)}
-                    placeholder="Add tag, like theory or scales"
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
+                {isEditing && <div className="edit-tags-wrap">
+                  <button type="button" className="edit-tags-button" onClick={() => setShowEditTagPicker(current => !current)}>
+                    Edit Tags <span>▾</span>
+                  </button>
+                  {showEditTagPicker && <div className="edit-tags-panel">
+                    <input
+                      className="tags-input"
+                      value={newTagText}
+                      onChange={e => setNewTagText(e.target.value)}
+                      placeholder="Create a new tag, then press Enter"
+                      onKeyDown={e => {
+                        if (e.key !== 'Enter') return;
                         e.preventDefault();
-
                         const tag = newTagText.trim();
                         if (!tag) return;
-
-                        const nextTags = [...new Set([...tagStringToArray(draftTags), tag])];
-
-                        setDraftTags(nextTags.join(', '));
+                        setDraftTags(current => [...new Set([...tagStringToArray(current), tag])].join(', '));
                         setNewTagText('');
-                      }
-                    }}
-                  />
-
-                  <button
-                    type="button"
-                    disabled={!isEditing}
-                    onClick={() => {
-                      const tag = newTagText.trim();
-                      if (!tag) return;
-
-                      const nextTags = [...new Set([...tagStringToArray(draftTags), tag])];
-
-                      setDraftTags(nextTags.join(', '));
-                      setNewTagText('');
-                    }}
-                  >
-                    Add Tag
-                  </button>
-                </div>
-
-                {allTags.length > 0 && (
-                  <div className="saved-tags-picker">
-                    <span className="muted-label">Saved tags</span>
-                    {allTags.map(tag => {
-                      const selectedTag = tagStringToArray(draftTags).includes(tag);
-                      return <button
-                        key={tag}
-                        type="button"
-                        disabled={!isEditing}
-                        className={selectedTag ? 'active' : ''}
-                        onClick={() => setDraftTags(current => {
-                          const tags = tagStringToArray(current);
-                          return (selectedTag ? tags.filter(existing => existing !== tag) : [...tags, tag]).join(', ');
-                        })}
-                      >
-                        #{tag}
-                      </button>;
-                    })}
-                  </div>
-                )}
+                      }}
+                    />
+                    <div className="edit-tags-list">
+                      {[...new Set([...allTags, ...tagStringToArray(draftTags)])].sort((a, b) => a.localeCompare(b)).map(tag => {
+                        const selectedTag = tagStringToArray(draftTags).includes(tag);
+                        return <label key={tag}>
+                          <input type="checkbox" checked={selectedTag} onChange={() => setDraftTags(current => {
+                            const tags = tagStringToArray(current);
+                            return (selectedTag ? tags.filter(existing => existing !== tag) : [...tags, tag]).join(', ');
+                          })} />
+                          <span>#{tag}</span>
+                        </label>;
+                      })}
+                    </div>
+                  </div>}
+                </div>}
 
                 <label className="field-label">Notes</label>
 
