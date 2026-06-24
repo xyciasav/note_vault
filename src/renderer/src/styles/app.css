@@ -1162,6 +1162,7 @@ body {
 .theme-dark .bulk-toolbar span { color: #94a3b8; }
 .theme-dark .saved-tags-picker button { background: #172033; color: #bfdbfe; border-color: #334155; }
 .theme-dark .saved-tags-picker button.active { background: #1d4ed8; color: #fff; border-color: #60a5fa; }
+.theme-dark .item-card.bulk-selected { background: #172b4d !important; border-color: #38bdf8 !important; box-shadow: 0 0 0 2px rgba(56, 189, 248, .28) !important; }
 
 .new-collection-form {
   display: flex;
