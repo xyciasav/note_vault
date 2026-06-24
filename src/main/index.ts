@@ -352,6 +352,12 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '1.2.29': [
+    'Multi-selected library cards now use a clean highlight without in-card checkmarks.'
+  ],
+  '1.2.28': [
+    'Fixed the Edit button so note fields remain editable after opening edit mode.'
+  ],
   '1.2.27': [
     'Restored the original direct tag controls on individual notes and files.',
     'The unified Edit Tags experience remains available for bulk item changes.'

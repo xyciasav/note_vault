@@ -70,7 +70,6 @@ button, input, textarea { font: inherit; }
 .item-card { background: #172033; color: #e5e7eb; border: 1px solid #273449; border-radius: 16px; padding: 14px; text-align: left; cursor: pointer; user-select: none; }
 .item-card.selected { border-color: #60a5fa; background: #1d2b44; }
 .item-card.bulk-selected { border-color: #2563eb !important; box-shadow: 0 0 0 2px rgba(37, 99, 235, .18); }
-.item-selector { width: 20px; height: 20px; display: inline-grid; place-items: center; border: 1px solid #60a5fa; border-radius: 6px; color: #fff; background: #2563eb; font-size: 13px; font-weight: 900; }
 .item-card-top { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
 .item-thumbnail { width: 42px; height: 42px; flex: 0 0 42px; object-fit: cover; border: 1px solid #475569; border-radius: 9px; background: #0b1220; }
 .item-thumbnail-small { width: 30px; height: 30px; flex-basis: 30px; border-radius: 7px; }

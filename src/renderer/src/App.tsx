@@ -77,6 +77,7 @@ export default function App() {
   const [showNewCollectionInput, setShowNewCollectionInput] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const autoEditIdRef = useRef<string | null>(null);
+  const lastSelectedIdRef = useRef<string | null>(null);
   const [isSelectingItems, setIsSelectingItems] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [showBulkTagPicker, setShowBulkTagPicker] = useState(false);
@@ -286,13 +287,17 @@ export default function App() {
 
   useEffect(() => {
     if (selected) {
-      setDraftTitle(selected.title || '');
-      setDraftBody(selected.body || '');
-      setDraftTags((selected.tags || []).join(', '));
-      setDraftCollectionIds(selected.collection_ids || []);
+      const selectionChanged = lastSelectedIdRef.current !== selected.id;
       const shouldEdit = selected.id === autoEditIdRef.current;
-      setIsEditing(shouldEdit);
-      if (shouldEdit) autoEditIdRef.current = null;
+      if (selectionChanged || shouldEdit) {
+        setDraftTitle(selected.title || '');
+        setDraftBody(selected.body || '');
+        setDraftTags((selected.tags || []).join(', '));
+        setDraftCollectionIds(selected.collection_ids || []);
+        setIsEditing(shouldEdit);
+        if (shouldEdit) autoEditIdRef.current = null;
+      }
+      lastSelectedIdRef.current = selected.id;
     }
 
     if (!selectedId) {
@@ -300,6 +305,7 @@ export default function App() {
       setDraftBody('');
       setDraftTags('');
       setDraftCollectionIds([]);
+      lastSelectedIdRef.current = null;
     }
   }, [selected, selectedId]);
 
@@ -1043,7 +1049,6 @@ export default function App() {
                       {item.favorite ? '★ ' : ''}
                       {item.title || 'Untitled note'}
                     </span>
-                    {isSelectingItems && <span className="item-selector">{selectedItemIds.has(item.id) ? '✓' : ''}</span>}
                     <span className="item-type">{item.type}</span>
                   </div>
 
