@@ -531,8 +531,13 @@ export default function App() {
   function selectItemWithModifiers(itemId: string, event: React.MouseEvent<HTMLDivElement>) {
     const modifier = event.ctrlKey || event.metaKey || event.shiftKey;
     if (!modifier) {
-      if (isSelectingItems) toggleItemSelection(itemId);
-      else setSelectedId(itemId);
+      if (isSelectingItems) {
+        toggleItemSelection(itemId);
+        selectionAnchorIdRef.current = itemId;
+      } else {
+        setSelectedId(itemId);
+        selectionAnchorIdRef.current = itemId;
+      }
       return;
     }
 
@@ -544,6 +549,7 @@ export default function App() {
       const rangeStart = start === -1 ? end : start;
       const range = sortedItems.slice(Math.min(rangeStart, end), Math.max(rangeStart, end) + 1).map(item => item.id);
       setSelectedItemIds(current => event.ctrlKey || event.metaKey ? new Set([...current, ...range]) : new Set(range));
+      if (!selectionAnchorIdRef.current) selectionAnchorIdRef.current = itemId;
     } else {
       toggleItemSelection(itemId);
       selectionAnchorIdRef.current = itemId;

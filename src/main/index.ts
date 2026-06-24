@@ -352,6 +352,9 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '1.2.30': [
+    'Shift and Ctrl+Shift selection now use a reliable anchor and select the full range of cards between clicks.'
+  ],
   '1.2.29': [
     'Multi-selected library cards now use a clean highlight without in-card checkmarks.'
   ],
