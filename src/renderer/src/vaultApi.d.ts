@@ -19,6 +19,20 @@ export type VaultItem = {
   file_path?: string | null;
 };
 
+export type ImportPreview = {
+  sourcePath: string;
+  relativePath: string;
+  title: string;
+  fileName: string;
+  fileExt: string;
+  size: number;
+  suggestedTags: string[];
+  suggestedCollectionName: string;
+  duplicateName: boolean;
+  extractedText: string;
+  thumbnailData?: string | null;
+};
+
 declare global {
   interface Window {
     vaultApi: {
@@ -37,6 +51,7 @@ declare global {
       addTagsToItems: (ids: string[], tags: string[]) => Promise<{ updated: number }>;
       removeTagsFromItems: (ids: string[], tags: string[]) => Promise<{ updated: number }>;
       addCollectionToItems: (ids: string[], collectionId: string) => Promise<{ updated: number }>;
+      previewImport: (files: { sourcePath: string; relativePath?: string }[]) => Promise<ImportPreview[]>;
       uploadFile: (args: { sourcePath: string; title?: string; body?: string; tags?: string[] | string; collectionIds?: string[] }) => Promise<VaultItem>;
       openFile: (id: string) => Promise<{ ok: boolean }>;
       reindexFiles: () => Promise<{ indexed: number }>;

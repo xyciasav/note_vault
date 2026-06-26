@@ -14,12 +14,19 @@ import {
   Settings
 } from 'lucide-react';
 import './styles/app.css';
-import type { VaultItem } from './vaultApi';
+import type { ImportPreview, VaultItem } from './vaultApi';
 
 type TypeFilter = 'all' | 'note' | 'file';
 type ItemSort = 'updated' | 'title' | 'tags';
 type AppView = 'dashboard' | 'library' | 'search' | 'settings';
 type BackupFrequency = 'on-close' | 'daily' | 'weekly' | 'never';
+
+type ImportDraft = ImportPreview & {
+  selected: boolean;
+  titleDraft: string;
+  tagsDraft: string[];
+  collectionNameDraft: string;
+};
 
 function tagStringToArray(value: string) {
   return value
@@ -35,6 +42,41 @@ function formatDate(value: string) {
     hour: 'numeric',
     minute: '2-digit'
   });
+}
+
+function formatBytes(value: number) {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function matchTextParts(text: string, query: string) {
+  const needle = query.trim();
+  if (!needle) return [{ text, match: false }];
+  const lowerText = text.toLowerCase();
+  const lowerNeedle = needle.toLowerCase();
+  const parts: { text: string; match: boolean }[] = [];
+  let cursor = 0;
+  let index = lowerText.indexOf(lowerNeedle);
+
+  while (index !== -1) {
+    if (index > cursor) parts.push({ text: text.slice(cursor, index), match: false });
+    parts.push({ text: text.slice(index, index + needle.length), match: true });
+    cursor = index + needle.length;
+    index = lowerText.indexOf(lowerNeedle, cursor);
+  }
+
+  if (cursor < text.length) parts.push({ text: text.slice(cursor), match: false });
+  return parts;
+}
+
+function HighlightedText({ text, query }: { text: string; query: string }) {
+  return <>
+    {matchTextParts(text, query).map((part, index) => part.match
+      ? <mark key={index}>{part.text}</mark>
+      : <React.Fragment key={index}>{part.text}</React.Fragment>
+    )}
+  </>;
 }
 
 export default function App() {
@@ -60,6 +102,9 @@ export default function App() {
   const [searchCollectionId, setSearchCollectionId] = useState('');
   const [showSearchCollectionDropdown, setShowSearchCollectionDropdown] = useState(false);
   const [searchPreviewItem, setSearchPreviewItem] = useState<VaultItem | null>(null);
+  const [importDrafts, setImportDrafts] = useState<ImportDraft[]>([]);
+  const [isPreparingImport, setIsPreparingImport] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
   const [draftTitle, setDraftTitle] = useState('');
   const [draftBody, setDraftBody] = useState('');
@@ -125,6 +170,49 @@ export default function App() {
     () => [...new Set([...allTags, ...bulkTagUsage.keys()])].sort((a, b) => a.localeCompare(b)),
     [allTags, bulkTagUsage]
   );
+
+  const searchSnippets = useMemo(() => {
+    const query = searchText.trim();
+    const snippets = new Map<string, { label: string; text: string }>();
+
+    searchResults.forEach(item => {
+      if (searchTagsOnly && query) {
+        const matchingTag = (item.tags || []).find(tag => tag.toLowerCase().includes(query.toLowerCase()));
+        snippets.set(item.id, {
+          label: matchingTag ? 'Matched tag' : 'Tags',
+          text: matchingTag ? `#${matchingTag}` : (item.tags || []).map(tag => `#${tag}`).join(', ')
+        });
+        return;
+      }
+
+      const fields = [
+        { label: 'Title', text: item.title || '' },
+        { label: 'Notes', text: item.body || '' },
+        { label: 'File name', text: item.file_name || '' },
+        { label: 'File text', text: item.extracted_text || '' },
+        { label: 'Tags', text: (item.tags || []).map(tag => `#${tag}`).join(', ') }
+      ];
+
+      const match = query
+        ? fields.find(field => field.text.toLowerCase().includes(query.toLowerCase()))
+        : fields.find(field => field.text.trim());
+
+      if (!match) {
+        snippets.set(item.id, { label: 'Preview', text: 'No preview text yet.' });
+        return;
+      }
+
+      const lower = match.text.toLowerCase();
+      const index = query ? lower.indexOf(query.toLowerCase()) : 0;
+      const start = Math.max(0, index - 70);
+      const end = Math.min(match.text.length, (index === -1 ? 0 : index) + Math.max(query.length, 60) + 90);
+      const prefix = start > 0 ? '…' : '';
+      const suffix = end < match.text.length ? '…' : '';
+      snippets.set(item.id, { label: match.label, text: `${prefix}${match.text.slice(start, end).trim()}${suffix}` });
+    });
+
+    return snippets;
+  }, [searchResults, searchTagsOnly, searchText]);
 
   useEffect(() => {
     localStorage.setItem('vault-notes-theme', isDarkMode ? 'dark' : 'light');
@@ -469,41 +557,101 @@ export default function App() {
     setIsEditing(false);
   }
 
-  async function uploadOne(file: File, refreshAfter = true) {
-    const sourcePath = window.vaultApi.getPathForFile(file);
+  function collectionNameForDraft(draft: ImportDraft) {
+    return draft.collectionNameDraft.trim();
+  }
 
-    if (!sourcePath) {
+  async function prepareImport(files: File[]) {
+    if (files.length === 0) return;
+
+    const fileInputs = files.map(file => ({
+      sourcePath: window.vaultApi.getPathForFile(file),
+      relativePath: (file as any).webkitRelativePath || file.name
+    })).filter(file => file.sourcePath);
+
+    if (fileInputs.length === 0) {
       throw new Error('Could not read file path from Electron.');
     }
 
+    setIsPreparingImport(true);
+    setStatus(`Preparing ${fileInputs.length} file${fileInputs.length === 1 ? '' : 's'} for review...`);
+    try {
+      const previews = await window.vaultApi.previewImport(fileInputs);
+      setImportDrafts(previews.map(preview => ({
+        ...preview,
+        selected: !preview.duplicateName,
+        titleDraft: preview.title,
+        tagsDraft: [...new Set(preview.suggestedTags)],
+        collectionNameDraft: selectedCollectionId
+          ? collections.find(collection => collection.id === selectedCollectionId)?.name || ''
+          : preview.suggestedCollectionName
+      })));
+      setStatus(`Review ${previews.length} file${previews.length === 1 ? '' : 's'} before importing.`);
+    } finally {
+      setIsPreparingImport(false);
+    }
+  }
+
+  async function uploadDraft(draft: ImportDraft, collectionIds: string[]) {
     const item = await window.vaultApi.uploadFile({
-      sourcePath,
-      title: file.name,
-      body: '',
-      tags: [],
-      collectionIds: selectedCollectionId ? [selectedCollectionId] : []
+      sourcePath: draft.sourcePath,
+      title: draft.titleDraft || draft.fileName,
+      body: draft.extractedText || '',
+      tags: draft.tagsDraft,
+      collectionIds
     });
 
-    if (refreshAfter) {
-      setAppView('library');
-      await refresh();
-      autoEditIdRef.current = item.id;
-      setSelectedId(item.id);
-      setStatus(`Uploaded ${file.name}.`);
-    }
     return item;
   }
 
-  async function onFileInput(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
+  function updateImportDraft(sourcePath: string, updates: Partial<ImportDraft>) {
+    setImportDrafts(current => current.map(draft => draft.sourcePath === sourcePath ? { ...draft, ...updates } : draft));
+  }
 
+  function toggleImportTag(sourcePath: string, tag: string) {
+    setImportDrafts(current => current.map(draft => {
+      if (draft.sourcePath !== sourcePath) return draft;
+      const hasTag = draft.tagsDraft.includes(tag);
+      return {
+        ...draft,
+        tagsDraft: hasTag ? draft.tagsDraft.filter(existing => existing !== tag) : [...draft.tagsDraft, tag]
+      };
+    }));
+  }
+
+  async function commitImportDrafts() {
+    const selectedDrafts = importDrafts.filter(draft => draft.selected);
+    if (selectedDrafts.length === 0) {
+      setStatus('Select at least one file to import.');
+      return;
+    }
+
+    setIsImporting(true);
     try {
+      const knownCollections = new Map(collections.map(collection => [collection.name.toLowerCase(), collection]));
+      const createdCollections = new Map<string, { id: string; name: string }>();
       let lastItem: VaultItem | undefined;
-      for (let index = 0; index < files.length; index += 1) {
-        setStatus(`Uploading ${index + 1} of ${files.length}: ${files[index].name}`);
-        lastItem = await uploadOne(files[index], false);
+
+      for (let index = 0; index < selectedDrafts.length; index += 1) {
+        const draft = selectedDrafts[index];
+        setStatus(`Importing ${index + 1} of ${selectedDrafts.length}: ${draft.fileName}`);
+        const collectionName = collectionNameForDraft(draft);
+        const collectionIds: string[] = [];
+
+        if (collectionName) {
+          const key = collectionName.toLowerCase();
+          let collection = knownCollections.get(key) || createdCollections.get(key);
+          if (!collection) {
+            collection = await window.vaultApi.createCollection(collectionName);
+            createdCollections.set(key, collection);
+          }
+          collectionIds.push(collection.id);
+        }
+
+        lastItem = await uploadDraft(draft, collectionIds);
       }
+
+      setImportDrafts([]);
       setAppView('library');
       await refresh();
       if (lastItem) {
@@ -511,7 +659,20 @@ export default function App() {
         setSelectedId(lastItem.id);
         setIsEditing(true);
       }
-      setStatus(`Uploaded ${files.length} file${files.length === 1 ? '' : 's'}.`);
+      setStatus(`Imported ${selectedDrafts.length} file${selectedDrafts.length === 1 ? '' : 's'}.`);
+    } catch (err: any) {
+      setStatus(`Import failed: ${err.message}`);
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
+  async function onFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    try {
+      await prepareImport(files);
     } catch (err: any) {
       setStatus(`Upload failed: ${err.message}`);
     } finally {
@@ -656,9 +817,7 @@ export default function App() {
     const files = Array.from(e.dataTransfer.files);
 
     try {
-      for (const file of files) {
-        await uploadOne(file);
-      }
+      await prepareImport(files);
     } catch (err: any) {
       setStatus(`Upload failed: ${err.message}`);
     }
@@ -735,6 +894,108 @@ export default function App() {
       {isDragging && (
         <div className="drop-overlay">
           Drop files to add them to your vault
+        </div>
+      )}
+
+      {importDrafts.length > 0 && (
+        <div className="import-review-backdrop">
+          <section className="import-review-dialog" role="dialog" aria-modal="true" aria-label="Review import">
+            <div className="import-review-header">
+              <div>
+                <span className="item-type">Import Wizard</span>
+                <h2>Review before adding to your vault</h2>
+                <p>
+                  Suggested tags and collections come from folder names and filenames. Uncheck anything you do not want.
+                </p>
+              </div>
+              <button onClick={() => setImportDrafts([])} disabled={isImporting}>Cancel</button>
+            </div>
+
+            <div className="import-review-tools">
+              <button
+                type="button"
+                onClick={() => setImportDrafts(current => current.map(draft => ({ ...draft, selected: true })))}
+              >
+                Select All
+              </button>
+              <button
+                type="button"
+                onClick={() => setImportDrafts(current => current.map(draft => ({ ...draft, selected: false })))}
+              >
+                Select None
+              </button>
+              <span>
+                {importDrafts.filter(draft => draft.selected).length} of {importDrafts.length} selected
+              </span>
+            </div>
+
+            <div className="import-review-list">
+              {importDrafts.map(draft => (
+                <article key={draft.sourcePath} className={`import-review-card ${draft.selected ? 'selected' : ''}`}>
+                  <label className="import-review-select">
+                    <input
+                      type="checkbox"
+                      checked={draft.selected}
+                      onChange={event => updateImportDraft(draft.sourcePath, { selected: event.target.checked })}
+                    />
+                    <span>{draft.duplicateName ? 'Possible duplicate' : 'Import'}</span>
+                  </label>
+
+                  <div className="import-review-main">
+                    {draft.thumbnailData && <img className="import-review-thumb" src={draft.thumbnailData} alt="" />}
+                    <div className="import-review-fields">
+                      <input
+                        value={draft.titleDraft}
+                        onChange={event => updateImportDraft(draft.sourcePath, { titleDraft: event.target.value })}
+                        aria-label={`Title for ${draft.fileName}`}
+                      />
+                      <small>{draft.relativePath} · {formatBytes(draft.size)}</small>
+                    </div>
+                  </div>
+
+                  <label className="import-review-field">
+                    Collection
+                    <input
+                      value={draft.collectionNameDraft}
+                      onChange={event => updateImportDraft(draft.sourcePath, { collectionNameDraft: event.target.value })}
+                      placeholder="Optional project/collection"
+                    />
+                  </label>
+
+                  <div className="import-review-tags">
+                    <span>Tags</span>
+                    <div>
+                      {[...new Set([...draft.tagsDraft, ...draft.suggestedTags, ...allTags])].slice(0, 18).map(tag => (
+                        <button
+                          key={tag}
+                          type="button"
+                          className={draft.tagsDraft.includes(tag) ? 'active' : ''}
+                          onClick={() => toggleImportTag(draft.sourcePath, tag)}
+                        >
+                          #{tag}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {(draft.extractedText || draft.thumbnailData) && (
+                    <div className="import-review-preview">
+                      {draft.extractedText
+                        ? <p>{draft.extractedText.slice(0, 260)}{draft.extractedText.length > 260 ? '…' : ''}</p>
+                        : <p>Image thumbnail ready. No readable text found.</p>}
+                    </div>
+                  )}
+                </article>
+              ))}
+            </div>
+
+            <div className="import-review-actions">
+              <button onClick={() => setImportDrafts([])} disabled={isImporting}>Cancel</button>
+              <button className="primary-action" onClick={commitImportDrafts} disabled={isImporting || isPreparingImport}>
+                {isImporting ? 'Importing...' : 'Import Selected'}
+              </button>
+            </div>
+          </section>
         </div>
       )}
 
@@ -1126,6 +1387,12 @@ export default function App() {
                   </span>
                 </div>
 
+                {selected?.type === 'file' && selected.thumbnail_data && (
+                  <div className="detail-file-preview">
+                    <img src={selected.thumbnail_data} alt={selected.title || selected.file_name || 'File preview'} />
+                  </div>
+                )}
+
                 <label className="field-label">Collection</label>
                 <div className="collection-picker">
                   {draftCollectionIds.length === 0 ? <span className="muted-label">No collections yet.</span> : collections
@@ -1464,16 +1731,19 @@ export default function App() {
                     {item.thumbnail_data && <img className="item-thumbnail" src={item.thumbnail_data} alt="" />}
                     <span className="item-title">
                       {item.favorite ? '★ ' : ''}
-                      {item.title || 'Untitled note'}
+                      <HighlightedText text={item.title || 'Untitled note'} query={searchText} />
                     </span>
                     <span className="item-type">{item.type}</span>
                   </div>
 
-                  <p>{item.body || item.file_name || 'No notes yet.'}</p>
+                  <p className="search-snippet">
+                    {searchSnippets.get(item.id) && <strong>{searchSnippets.get(item.id)?.label}: </strong>}
+                    <HighlightedText text={searchSnippets.get(item.id)?.text || item.body || item.file_name || 'No notes yet.'} query={searchText} />
+                  </p>
 
                   <div className="tag-row">
                     {(item.tags || []).slice(0, 8).map(tag => (
-                      <span key={tag}>#{tag}</span>
+                      <span key={tag}>#<HighlightedText text={tag} query={searchText} /></span>
                     ))}
                   </div>
 
@@ -1503,12 +1773,33 @@ export default function App() {
                 <div className="tag-row">
                   {(searchPreviewItem.tags || []).map(tag => <span key={tag}>#{tag}</span>)}
                 </div>
-                <pre className="search-preview-content">
-                  {searchPreviewItem.type === 'file'
-                    ? searchPreviewItem.extracted_text || 'No readable text was found in this file.'
-                    : searchPreviewItem.body || 'No notes yet.'}
-                </pre>
+                {searchPreviewItem.thumbnail_data && (
+                  <img className="search-preview-image" src={searchPreviewItem.thumbnail_data} alt={searchPreviewItem.title || 'Preview'} />
+                )}
+                <div className="search-preview-meta">
+                  {searchPreviewItem.file_name && <span>{searchPreviewItem.file_name}</span>}
+                  {searchPreviewItem.file_ext && <span>{searchPreviewItem.file_ext.toUpperCase().replace('.', '')}</span>}
+                </div>
+                <section className="search-preview-section">
+                  <h3>{searchPreviewItem.type === 'file' ? 'Notes / imported content' : 'Note'}</h3>
+                  <pre className="search-preview-content">
+                    <HighlightedText text={searchPreviewItem.body || 'No notes yet.'} query={searchText} />
+                  </pre>
+                </section>
+                {searchPreviewItem.type === 'file' && (
+                  <section className="search-preview-section">
+                    <h3>Readable file text</h3>
+                    <pre className="search-preview-content">
+                      <HighlightedText text={searchPreviewItem.extracted_text || 'No readable text was found in this file.'} query={searchText} />
+                    </pre>
+                  </section>
+                )}
                 <div className="search-preview-actions">
+                  {searchPreviewItem.type === 'file' && (
+                    <button onClick={() => window.vaultApi.openFile(searchPreviewItem.id)}>
+                      Open File
+                    </button>
+                  )}
                   <button
                     className="primary-action"
                     onClick={() => openSearchItemInLibrary(searchPreviewItem)}

@@ -286,6 +286,29 @@ async function extractText(sourcePath: string, ext: string) {
   }
 }
 
+function tokenizeImportText(value: string) {
+  const ignored = new Set([
+    'the', 'and', 'for', 'with', 'from', 'this', 'that', 'file', 'notes',
+    'music', 'vault', 'copy', 'final', 'draft', 'new', 'old'
+  ]);
+
+  return [...new Set(value
+    .replace(/\.[^/.\\]+$/, '')
+    .split(/[^a-zA-Z0-9]+/)
+    .map(part => part.trim().toLowerCase())
+    .filter(part => part.length >= 3 && !ignored.has(part))
+  )].slice(0, 8);
+}
+
+function suggestImportTags(sourcePath: string, relativePath = '') {
+  const parts = [
+    ...relativePath.split(/[\\/]+/),
+    ...path.dirname(sourcePath).split(/[\\/]+/).slice(-2),
+    path.basename(sourcePath)
+  ];
+  return tokenizeImportText(parts.join(' '));
+}
+
 function createRestoreBackup(targetPath: string) {
   const items = db.prepare('SELECT * FROM items ORDER BY created_at').all();
   const tags = db.prepare('SELECT * FROM tags ORDER BY name').all();
@@ -352,6 +375,11 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '1.2.32': [
+    'Search results now show match snippets with highlighted search terms.',
+    'File previews are richer, including image previews and readable file text inside the app.',
+    'Uploads and folder imports now open a review wizard with suggested tags, collections, duplicate warnings, and preview text.'
+  ],
   '1.2.31': [
     'Multi-selected card highlights now remain visible across every item in a selected range.'
   ],
@@ -820,6 +848,45 @@ ipcMain.handle('items:addCollection', (_event, ids: string[], collectionId: stri
     updated += 1;
   }
   return { updated };
+});
+
+ipcMain.handle('items:previewImport', async (_event, files: { sourcePath: string; relativePath?: string }[]) => {
+  const existingNames = new Set((db.prepare(`
+    SELECT lower(file_name) AS name
+    FROM items
+    WHERE type = 'file' AND file_name IS NOT NULL
+  `).all() as { name: string }[]).map(row => row.name));
+
+  const previews = [];
+  for (const file of files.slice(0, 500)) {
+    if (!file.sourcePath || !fs.existsSync(file.sourcePath)) continue;
+    const stat = fs.statSync(file.sourcePath);
+    if (!stat.isFile()) continue;
+
+    const originalName = path.basename(file.sourcePath);
+    const ext = path.extname(originalName).toLowerCase();
+    const relativePath = file.relativePath || originalName;
+    const topFolder = relativePath.includes('/') || relativePath.includes('\\')
+      ? relativePath.split(/[\\/]+/).filter(Boolean)[0]
+      : '';
+    const extractedText = await extractText(file.sourcePath, ext);
+
+    previews.push({
+      sourcePath: file.sourcePath,
+      relativePath,
+      title: originalName.replace(/\.[^/.]+$/, ''),
+      fileName: originalName,
+      fileExt: ext,
+      size: stat.size,
+      suggestedTags: suggestImportTags(file.sourcePath, relativePath),
+      suggestedCollectionName: topFolder || '',
+      duplicateName: existingNames.has(originalName.toLowerCase()),
+      extractedText: extractedText.slice(0, 2000),
+      thumbnailData: createThumbnailData(file.sourcePath, ext)
+    });
+  }
+
+  return previews;
 });
 
 ipcMain.handle('items:uploadFile', async (_event, args: { sourcePath: string; title?: string; body?: string; tags?: string[] | string; collectionIds?: string[] }) => {
