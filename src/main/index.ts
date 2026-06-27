@@ -404,6 +404,11 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '1.2.39': [
+    'Settings now has separate General, Tags, and Logs tabs.',
+    'Tags refresh when Settings opens and fall back to saved tag names if counts are unavailable.',
+    'The Search page title now stays white in dark mode.'
+  ],
   '1.2.38': [
     'Logs and Tags now get dedicated full-width space in Settings.',
     'The tag manager now shows how many items are assigned to each tag.',

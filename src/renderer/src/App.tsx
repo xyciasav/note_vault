@@ -21,6 +21,7 @@ type ItemSort = 'updated' | 'title' | 'tags';
 type AppView = 'dashboard' | 'library' | 'search' | 'settings';
 type BackupFrequency = 'on-close' | 'daily' | 'weekly' | 'never';
 type ImportFilter = 'all' | 'ready' | 'duplicates' | 'name-conflicts' | 'images' | 'pdfs';
+type SettingsTab = 'general' | 'tags' | 'logs';
 
 type ImportDraft = ImportPreview & {
   importId: string;
@@ -121,6 +122,7 @@ export default function App() {
   const [searchCollectionId, setSearchCollectionId] = useState('');
   const [showSearchCollectionDropdown, setShowSearchCollectionDropdown] = useState(false);
   const [searchPreviewItem, setSearchPreviewItem] = useState<VaultItem | null>(null);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
   const [importDrafts, setImportDrafts] = useState<ImportDraft[]>([]);
   const [isPreparingImport, setIsPreparingImport] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -270,6 +272,11 @@ export default function App() {
     if (importFilter === 'pdfs') return draft.fileExt === '.pdf';
     return true;
   }), [importDrafts, importFilter]);
+
+  const settingsTagRecords = useMemo(
+    () => tagRecords.length ? tagRecords : allTags.map(name => ({ name, count: 0 })),
+    [allTags, tagRecords]
+  );
 
   useEffect(() => {
     localStorage.setItem('vault-notes-theme', isDarkMode ? 'dark' : 'light');
@@ -439,7 +446,10 @@ export default function App() {
 }, [appView, searchText, searchTags, searchType, searchTagsOnly, searchCollectionId]);
 
   useEffect(() => {
-    if (appView === 'settings') refreshLogs();
+    if (appView === 'settings') {
+      refreshLogs();
+      refreshTags().catch(err => setStatus(`Could not load tags: ${err.message}`));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appView]);
 
@@ -2143,12 +2153,28 @@ export default function App() {
           {status && <div className="status-bar">{status}</div>}
         </main>
       ) : (
-        <main className="search-panel settings-panel">
+        <main className={`search-panel settings-panel settings-tab-${settingsTab}`}>
           <div className="search-workspace-header">
             <div>
               <h1>Settings</h1>
               <p>Backup, maintenance, appearance, and updates—kept in one tidy place.</p>
             </div>
+          </div>
+
+          <div className="settings-tabs">
+            {([
+              ['general', 'General'],
+              ['tags', `Tags (${settingsTagRecords.length})`],
+              ['logs', 'Logs']
+            ] as [SettingsTab, string][]).map(([tab, label]) => (
+              <button
+                key={tab}
+                className={settingsTab === tab ? 'active' : ''}
+                onClick={() => setSettingsTab(tab)}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
           <div className="settings-grid">
@@ -2247,9 +2273,9 @@ export default function App() {
               <button onClick={createSettingsTag}>Add Tag</button>
             </div>
             <div className="tag-manager-list">
-              {tagRecords.length === 0 ? (
+              {settingsTagRecords.length === 0 ? (
                 <span className="muted-label">No tags yet.</span>
-              ) : tagRecords.map(tag => (
+              ) : settingsTagRecords.map(tag => (
                 <div key={tag.name} className="tag-manager-row">
                   {renamingTag === tag.name ? (
                     <>
