@@ -385,6 +385,11 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '1.2.34': [
+    'The import wizard now shows summary counts for selected files, duplicates, and name conflicts.',
+    'Import review can be filtered by ready files, duplicates, name conflicts, images, or PDFs.',
+    'Tags and collections can now be applied to all selected import files at once.'
+  ],
   '1.2.33': [
     'Import duplicate checks now compare file contents, not just filenames.',
     'Exact duplicate files are skipped by default and explain which vault item they match.',

@@ -1025,7 +1025,16 @@ body {
 .import-review-header p { margin: 0; color: #94a3b8; }
 .import-review-header button, .import-review-tools button, .import-review-actions button { border: 1px solid #475569; border-radius: 9px; padding: 8px 11px; background: #172033; color: #dbeafe; cursor: pointer; }
 .import-review-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: #94a3b8; font-size: 13px; }
+.import-filter-row { display: flex; flex-wrap: wrap; gap: 7px; }
+.import-filter-row button { border: 1px solid #334155; border-radius: 999px; padding: 6px 10px; background: #0b1220; color: #bfdbfe; cursor: pointer; font-size: 12px; }
+.import-filter-row button.active, .import-filter-row button:hover { background: #2563eb; border-color: #60a5fa; color: #fff; }
+.import-bulk-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.import-bulk-row label { display: grid; gap: 6px; color: #bfdbfe; font-size: 12px; font-weight: 700; }
+.import-bulk-row label > div { display: flex; gap: 7px; }
+.import-bulk-row input { min-width: 0; flex: 1; border: 1px solid #334155; border-radius: 10px; padding: 8px 10px; background: #111827; color: #e5e7eb; outline: none; }
+.import-bulk-row button { border: 1px solid #475569; border-radius: 9px; padding: 8px 10px; background: #172033; color: #dbeafe; cursor: pointer; }
 .import-review-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 12px; overflow: auto; padding-right: 4px; }
+.import-review-empty { grid-column: 1 / -1; padding: 28px; border: 1px dashed #475569; border-radius: 14px; color: #94a3b8; text-align: center; }
 .import-review-card { display: grid; gap: 12px; padding: 14px; border: 1px solid #334155; border-radius: 16px; background: #0b1220; }
 .import-review-card.selected { border-color: #38bdf8; box-shadow: 0 0 0 2px rgba(56, 189, 248, .18); }
 .import-review-select { display: flex; align-items: center; gap: 8px; color: #bfdbfe; font-weight: 700; }
@@ -1048,6 +1057,7 @@ body {
 .import-review-preview p { margin: 0; white-space: pre-wrap; font-size: 12px; line-height: 1.45; }
 .import-review-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .import-review-actions .primary-action { background: #2563eb; color: #fff; border-color: #3b82f6; }
+@media (max-width: 760px) { .import-bulk-row { grid-template-columns: 1fr; } }
 
 .settings-grid {
   display: grid;

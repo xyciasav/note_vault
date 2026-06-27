@@ -20,6 +20,7 @@ type TypeFilter = 'all' | 'note' | 'file';
 type ItemSort = 'updated' | 'title' | 'tags';
 type AppView = 'dashboard' | 'library' | 'search' | 'settings';
 type BackupFrequency = 'on-close' | 'daily' | 'weekly' | 'never';
+type ImportFilter = 'all' | 'ready' | 'duplicates' | 'name-conflicts' | 'images' | 'pdfs';
 
 type ImportDraft = ImportPreview & {
   selected: boolean;
@@ -121,6 +122,9 @@ export default function App() {
   const [importDrafts, setImportDrafts] = useState<ImportDraft[]>([]);
   const [isPreparingImport, setIsPreparingImport] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [importFilter, setImportFilter] = useState<ImportFilter>('all');
+  const [importBulkTag, setImportBulkTag] = useState('');
+  const [importBulkCollection, setImportBulkCollection] = useState('');
 
   const [draftTitle, setDraftTitle] = useState('');
   const [draftBody, setDraftBody] = useState('');
@@ -229,6 +233,24 @@ export default function App() {
 
     return snippets;
   }, [searchResults, searchTagsOnly, searchText]);
+
+  const importSummary = useMemo(() => ({
+    total: importDrafts.length,
+    selected: importDrafts.filter(draft => draft.selected).length,
+    exactDuplicates: importDrafts.filter(draft => draft.duplicateKind === 'same-file').length,
+    nameConflicts: importDrafts.filter(draft => draft.duplicateKind === 'same-name').length,
+    images: importDrafts.filter(draft => ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'].includes(draft.fileExt)).length,
+    pdfs: importDrafts.filter(draft => draft.fileExt === '.pdf').length
+  }), [importDrafts]);
+
+  const filteredImportDrafts = useMemo(() => importDrafts.filter(draft => {
+    if (importFilter === 'ready') return draft.duplicateKind === 'none';
+    if (importFilter === 'duplicates') return draft.duplicateKind === 'same-file';
+    if (importFilter === 'name-conflicts') return draft.duplicateKind === 'same-name';
+    if (importFilter === 'images') return ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'].includes(draft.fileExt);
+    if (importFilter === 'pdfs') return draft.fileExt === '.pdf';
+    return true;
+  }), [importDrafts, importFilter]);
 
   useEffect(() => {
     localStorage.setItem('vault-notes-theme', isDarkMode ? 'dark' : 'light');
@@ -635,6 +657,32 @@ export default function App() {
     }));
   }
 
+  function selectVisibleImportDrafts(selected: boolean) {
+    const visiblePaths = new Set(filteredImportDrafts.map(draft => draft.sourcePath));
+    setImportDrafts(current => current.map(draft => visiblePaths.has(draft.sourcePath) ? { ...draft, selected } : draft));
+  }
+
+  function addTagToSelectedImports() {
+    const tag = importBulkTag.trim();
+    if (!tag) return;
+    setImportDrafts(current => current.map(draft => draft.selected
+      ? { ...draft, tagsDraft: [...new Set([...draft.tagsDraft, tag])] }
+      : draft
+    ));
+    setImportBulkTag('');
+    setStatus(`Added #${tag} to selected import files.`);
+  }
+
+  function applyCollectionToSelectedImports() {
+    const collectionName = importBulkCollection.trim();
+    if (!collectionName) return;
+    setImportDrafts(current => current.map(draft => draft.selected
+      ? { ...draft, collectionNameDraft: collectionName }
+      : draft
+    ));
+    setStatus(`Set selected import files to collection "${collectionName}".`);
+  }
+
   async function commitImportDrafts() {
     const selectedDrafts = importDrafts.filter(draft => draft.selected);
     if (selectedDrafts.length === 0) {
@@ -930,23 +978,78 @@ export default function App() {
             <div className="import-review-tools">
               <button
                 type="button"
-                onClick={() => setImportDrafts(current => current.map(draft => ({ ...draft, selected: true })))}
+                onClick={() => selectVisibleImportDrafts(true)}
               >
-                Select All
+                Select Visible
               </button>
               <button
                 type="button"
-                onClick={() => setImportDrafts(current => current.map(draft => ({ ...draft, selected: false })))}
+                onClick={() => selectVisibleImportDrafts(false)}
               >
-                Select None
+                Deselect Visible
               </button>
               <span>
-                {importDrafts.filter(draft => draft.selected).length} of {importDrafts.length} selected
+                {importSummary.selected} selected · {importSummary.total} total · {importSummary.exactDuplicates} exact duplicates · {importSummary.nameConflicts} name conflicts
               </span>
             </div>
 
+            <div className="import-filter-row">
+              {([
+                ['all', `All (${importSummary.total})`],
+                ['ready', `Ready (${importSummary.total - importSummary.exactDuplicates - importSummary.nameConflicts})`],
+                ['duplicates', `Duplicates (${importSummary.exactDuplicates})`],
+                ['name-conflicts', `Name Conflicts (${importSummary.nameConflicts})`],
+                ['images', `Images (${importSummary.images})`],
+                ['pdfs', `PDFs (${importSummary.pdfs})`]
+              ] as [ImportFilter, string][]).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={importFilter === value ? 'active' : ''}
+                  onClick={() => setImportFilter(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="import-bulk-row">
+              <label>
+                Add tag to selected
+                <div>
+                  <input
+                    value={importBulkTag}
+                    onChange={event => setImportBulkTag(event.target.value)}
+                    onKeyDown={event => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        addTagToSelectedImports();
+                      }
+                    }}
+                    placeholder="practice, lyrics, tab..."
+                  />
+                  <button type="button" onClick={addTagToSelectedImports}>Add Tag</button>
+                </div>
+              </label>
+              <label>
+                Set collection for selected
+                <div>
+                  <input
+                    value={importBulkCollection}
+                    onChange={event => setImportBulkCollection(event.target.value)}
+                    placeholder="Project or folder name"
+                    list="import-collection-suggestions"
+                  />
+                  <datalist id="import-collection-suggestions">
+                    {collections.map(collection => <option key={collection.id} value={collection.name} />)}
+                  </datalist>
+                  <button type="button" onClick={applyCollectionToSelectedImports}>Apply</button>
+                </div>
+              </label>
+            </div>
+
             <div className="import-review-list">
-              {importDrafts.map(draft => (
+              {filteredImportDrafts.map(draft => (
                 <article key={draft.sourcePath} className={`import-review-card ${draft.selected ? 'selected' : ''}`}>
                   <label className="import-review-select">
                     <input
@@ -1008,6 +1111,9 @@ export default function App() {
                   )}
                 </article>
               ))}
+              {filteredImportDrafts.length === 0 && (
+                <div className="import-review-empty">No files match this filter.</div>
+              )}
             </div>
 
             <div className="import-review-actions">
