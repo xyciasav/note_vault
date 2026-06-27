@@ -24,6 +24,7 @@ Everything is stored on the computer running the app. There is no account, cloud
 - Add reusable tags to notes and files.
 - Manage saved tags from Settings: add, rename, delete, and see how many items use each tag.
 - Click a tag's assigned count to jump into Search filtered to that tag.
+- Use the dashboard Tags card as a shortcut straight into the Settings tag manager.
 - Group notes and files into collections or projects.
 - Put the same item in more than one collection when it belongs to multiple projects.
 - Edit tags and collections on individual items.
@@ -162,6 +163,7 @@ After an update, Vault Notes can show a "What's New" prompt for the installed ve
 ### Appearance and usability
 
 - Dark mode is supported and is the default.
+- Dark-mode titles, search result cards, and the app brand are tuned for readable contrast.
 - The app shows its version near the title.
 - Window panes can be resized.
 - Column sizing is remembered.
