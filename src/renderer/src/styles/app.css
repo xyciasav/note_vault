@@ -1178,7 +1178,8 @@ body {
 .tag-manager-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 8px; max-height: min(58vh, 680px); overflow: auto; padding-right: 4px; }
 .tag-manager-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 8px; padding: 9px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
 .tag-manager-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #0f172a; font-weight: 800; }
-.tag-manager-count { justify-self: start; min-width: 92px; text-align: center; border: 1px solid #cbd5e1; border-radius: 999px; padding: 4px 8px; background: #fff; color: #475569; font-size: 12px; font-weight: 800; }
+.tag-manager-count { justify-self: start; min-width: 92px; text-align: center; border: 1px solid #cbd5e1; border-radius: 999px; padding: 4px 8px; background: #fff; color: #475569; font-size: 12px; font-weight: 800; cursor: pointer; }
+.tag-manager-count:hover { border-color: #2563eb; color: #1d4ed8; background: #eff6ff; }
 .tag-manager-add button, .tag-manager-row button { border: 1px solid #cbd5e1; border-radius: 9px; padding: 7px 10px; background: #fff; color: #1e3a8a; cursor: pointer; font-weight: 700; }
 .tag-manager-row .danger { color: #b91c1c; border-color: #fecaca; background: #fff1f2; }
 
@@ -1239,7 +1240,19 @@ body {
 .theme-dark .item-title,
 .theme-dark .settings-section h2,
 .theme-dark .search-results-header { color: #f8fafc !important; }
+.theme-dark .brand,
+.theme-dark .brand span {
+  color: #ffffff !important;
+}
+.theme-dark .brand small {
+  color: #dbeafe !important;
+}
 .theme-dark .search-workspace-header h1 { color: #ffffff !important; }
+.theme-dark .search-results-grid .search-result-card .item-title,
+.theme-dark .search-results-grid .search-result-card .item-title *,
+.theme-dark .search-results-grid .search-result-card strong {
+  color: #ffffff !important;
+}
 .theme-dark p,
 .theme-dark .meta-line,
 .theme-dark .settings-section p,

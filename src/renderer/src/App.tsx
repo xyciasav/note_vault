@@ -314,6 +314,7 @@ export default function App() {
     setItems(loadedItems);
 
     const loadedTags = await window.vaultApi.listTags();
+    setTagRecords(loadedTags);
     setAllTags(loadedTags.map((tag: any) => tag.name));
 
     const loadedCollections = await window.vaultApi.listCollections();
@@ -407,6 +408,21 @@ export default function App() {
     setItems(current => [item, ...current.filter(existing => existing.id !== item.id)]);
     setSelectedId(item.id);
     setAppView('library');
+  }
+
+  function openSettingsTab(tab: SettingsTab) {
+    setSettingsTab(tab);
+    setAppView('settings');
+  }
+
+  function openSearchForTag(tag: string) {
+    setSearchText('');
+    setSearchTags([tag]);
+    setSearchTagsOnly(false);
+    setSearchType('all');
+    setSearchCollectionId('');
+    setSearchResults([]);
+    setAppView('search');
   }
 
   useEffect(() => {
@@ -1475,7 +1491,7 @@ export default function App() {
             <button className="dashboard-card" onClick={() => openDashboardLibrary()}>
               <span>Collections</span><strong>{dashboard?.collections ?? 0}</strong><small>Projects and groupings</small>
             </button>
-            <button className="dashboard-card" onClick={() => setAppView('search')}>
+            <button className="dashboard-card" onClick={() => openSettingsTab('tags')}>
               <span>Tags</span><strong>{dashboard?.tags ?? 0}</strong><small>Ways to find related ideas</small>
             </button>
             <button className="dashboard-card" onClick={() => openDashboardLibrary()}>
@@ -2300,7 +2316,14 @@ export default function App() {
                   ) : (
                     <>
                       <span className="tag-manager-name">#{tag.name}</span>
-                      <span className="tag-manager-count">{tag.count || 0} assigned</span>
+                      <button
+                        type="button"
+                        className="tag-manager-count"
+                        onClick={() => openSearchForTag(tag.name)}
+                        title={`Search items tagged ${tag.name}`}
+                      >
+                        {tag.count || 0} assigned
+                      </button>
                       <button onClick={() => {
                         setRenamingTag(tag.name);
                         setRenameTagText(tag.name);

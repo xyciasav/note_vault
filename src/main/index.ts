@@ -404,6 +404,11 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '1.2.40': [
+    'Search result card titles and the app brand now stay readable in dark mode.',
+    'Dashboard Tags now opens the Settings Tags tab.',
+    'Tag assignment counts can be clicked to search items with that tag.'
+  ],
   '1.2.39': [
     'Settings now has separate General, Tags, and Logs tabs.',
     'Tags refresh when Settings opens and fall back to saved tag names if counts are unavailable.',
