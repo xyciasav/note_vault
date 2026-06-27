@@ -39,6 +39,8 @@ declare global {
   interface Window {
     vaultApi: {
       getAppVersion: () => Promise<string>;
+      getLogs: () => Promise<{ path: string; text: string }>;
+      openLogs: () => Promise<{ ok: boolean; path: string }>;
       getDashboardSummary: () => Promise<{ totalItems: number; notes: number; files: number; favorites: number; collections: number; tags: number; recentItems: VaultItem[] }>;
       getPathForFile: (file: File) => string;
       listItems: (args?: { search?: string; tag?: string; type?: string; collectionId?: string }) => Promise<VaultItem[]>;

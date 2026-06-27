@@ -23,6 +23,7 @@ type BackupFrequency = 'on-close' | 'daily' | 'weekly' | 'never';
 type ImportFilter = 'all' | 'ready' | 'duplicates' | 'name-conflicts' | 'images' | 'pdfs';
 
 type ImportDraft = ImportPreview & {
+  importId: string;
   selected: boolean;
   titleDraft: string;
   tagsDraft: string[];
@@ -149,11 +150,15 @@ export default function App() {
   const [showBulkCollectionPicker, setShowBulkCollectionPicker] = useState(false);
   const [bulkTags, setBulkTags] = useState<Set<string>>(new Set());
   const [bulkTagTouched, setBulkTagTouched] = useState<Set<string>>(new Set());
+  const [bulkCollections, setBulkCollections] = useState<Set<string>>(new Set());
+  const [bulkCollectionTouched, setBulkCollectionTouched] = useState<Set<string>>(new Set());
   const selectionAnchorIdRef = useRef<string | null>(null);
   const [backupDirectory, setBackupDirectory] = useState('');
   const [backupFrequency, setBackupFrequency] = useState<BackupFrequency>('daily');
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('vault-notes-theme') !== 'light');
   const [appVersion, setAppVersion] = useState('');
+  const [logText, setLogText] = useState('');
+  const [logPath, setLogPath] = useState('');
   const [dashboard, setDashboard] = useState<{ totalItems: number; notes: number; files: number; favorites: number; collections: number; tags: number; recentItems: VaultItem[] } | null>(null);
   const itemsListRef = useRef<HTMLDivElement | null>(null);
   const itemCardRefs = useRef(new Map<string, HTMLDivElement>());
@@ -190,6 +195,14 @@ export default function App() {
     () => [...new Set([...allTags, ...bulkTagUsage.keys()])].sort((a, b) => a.localeCompare(b)),
     [allTags, bulkTagUsage]
   );
+
+  const bulkCollectionUsage = useMemo(() => {
+    const usage = new Map<string, number>();
+    items.filter(item => selectedItemIds.has(item.id)).forEach(item => {
+      (item.collection_ids || []).forEach(collectionId => usage.set(collectionId, (usage.get(collectionId) || 0) + 1));
+    });
+    return usage;
+  }, [items, selectedItemIds]);
 
   const searchSnippets = useMemo(() => {
     const query = searchText.trim();
@@ -412,6 +425,11 @@ export default function App() {
 }, [appView, searchText, searchTags, searchType, searchTagsOnly, searchCollectionId]);
 
   useEffect(() => {
+    if (appView === 'settings') refreshLogs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appView]);
+
+  useEffect(() => {
     if (selected) {
       const selectionChanged = lastSelectedIdRef.current !== selected.id;
       const shouldEdit = selected.id === autoEditIdRef.current;
@@ -615,8 +633,9 @@ export default function App() {
     setStatus(`Preparing ${fileInputs.length} file${fileInputs.length === 1 ? '' : 's'} for review...`);
     try {
       const previews = await window.vaultApi.previewImport(fileInputs);
-      setImportDrafts(previews.map(preview => ({
+      setImportDrafts(previews.map((preview, index) => ({
         ...preview,
+        importId: `${preview.sourcePath}-${index}`,
         selected: preview.duplicateKind !== 'same-file',
         titleDraft: preview.title,
         tagsDraft: [...new Set(preview.suggestedTags)],
@@ -642,13 +661,13 @@ export default function App() {
     return item;
   }
 
-  function updateImportDraft(sourcePath: string, updates: Partial<ImportDraft>) {
-    setImportDrafts(current => current.map(draft => draft.sourcePath === sourcePath ? { ...draft, ...updates } : draft));
+  function updateImportDraft(importId: string, updates: Partial<ImportDraft>) {
+    setImportDrafts(current => current.map(draft => draft.importId === importId ? { ...draft, ...updates } : draft));
   }
 
-  function toggleImportTag(sourcePath: string, tag: string) {
+  function toggleImportTag(importId: string, tag: string) {
     setImportDrafts(current => current.map(draft => {
-      if (draft.sourcePath !== sourcePath) return draft;
+      if (draft.importId !== importId) return draft;
       const hasTag = draft.tagsDraft.includes(tag);
       return {
         ...draft,
@@ -658,8 +677,8 @@ export default function App() {
   }
 
   function selectVisibleImportDrafts(selected: boolean) {
-    const visiblePaths = new Set(filteredImportDrafts.map(draft => draft.sourcePath));
-    setImportDrafts(current => current.map(draft => visiblePaths.has(draft.sourcePath) ? { ...draft, selected } : draft));
+    const visibleIds = new Set(filteredImportDrafts.map(draft => draft.importId));
+    setImportDrafts(current => current.map(draft => visibleIds.has(draft.importId) ? { ...draft, selected } : draft));
   }
 
   function addTagToSelectedImports() {
@@ -874,6 +893,37 @@ export default function App() {
     setStatus(`Added ${result.updated} items to ${collection?.name || 'the collection'}.`);
   }
 
+  function toggleBulkCollection(collectionId: string) {
+    setBulkCollections(current => {
+      const next = new Set(current);
+      if (next.has(collectionId)) next.delete(collectionId);
+      else next.add(collectionId);
+      return next;
+    });
+    setBulkCollectionTouched(current => new Set([...current, collectionId]));
+  }
+
+  async function applyBulkCollections() {
+    const selectedItems = items.filter(item => selectedItemIds.has(item.id));
+    if (selectedItems.length === 0 || bulkCollectionTouched.size === 0) return;
+    const touched = [...bulkCollectionTouched];
+
+    for (const item of selectedItems) {
+      const next = new Set(item.collection_ids || []);
+      touched.forEach(collectionId => {
+        if (bulkCollections.has(collectionId)) next.add(collectionId);
+        else next.delete(collectionId);
+      });
+      await window.vaultApi.updateItem({ id: item.id, collectionIds: [...next] });
+    }
+
+    await refresh();
+    setBulkCollections(new Set());
+    setBulkCollectionTouched(new Set());
+    setShowBulkCollectionPicker(false);
+    setStatus('Updated collections for selected items.');
+  }
+
   async function onDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
     setIsDragging(false);
@@ -927,6 +977,26 @@ export default function App() {
       setStatus(`Indexed ${result.indexed} file${result.indexed === 1 ? '' : 's'} for search.`);
     } catch (err: any) {
       setStatus(`Could not index files: ${err.message}`);
+    }
+  }
+
+  async function refreshLogs() {
+    try {
+      const logs = await window.vaultApi.getLogs();
+      setLogText(logs.text);
+      setLogPath(logs.path);
+      setStatus('Logs refreshed.');
+    } catch (err: any) {
+      setStatus(`Could not load logs: ${err.message}`);
+    }
+  }
+
+  async function openLogsFolder() {
+    try {
+      const result = await window.vaultApi.openLogs();
+      setStatus(`Opened logs folder: ${result.path}`);
+    } catch (err: any) {
+      setStatus(`Could not open logs: ${err.message}`);
     }
   }
 
@@ -1050,15 +1120,21 @@ export default function App() {
 
             <div className="import-review-list">
               {filteredImportDrafts.map(draft => (
-                <article key={draft.sourcePath} className={`import-review-card ${draft.selected ? 'selected' : ''}`}>
-                  <label className="import-review-select">
+                <article key={draft.importId} className={`import-review-card ${draft.selected ? 'selected' : ''}`}>
+                  <div className="import-review-select">
                     <input
                       type="checkbox"
                       checked={draft.selected}
-                      onChange={event => updateImportDraft(draft.sourcePath, { selected: event.target.checked })}
+                      onChange={event => updateImportDraft(draft.importId, { selected: event.target.checked })}
                     />
                     <span>{draft.selected ? 'Import' : 'Skip'} · {duplicateImportLabel(draft)}</span>
-                  </label>
+                    <button
+                      type="button"
+                      onClick={() => updateImportDraft(draft.importId, { selected: !draft.selected })}
+                    >
+                      {draft.selected ? 'Skip this file' : 'Import this file'}
+                    </button>
+                  </div>
                   {duplicateImportDetail(draft) && (
                     <div className={`import-duplicate-note ${draft.duplicateKind === 'same-file' ? 'exact' : 'name-only'}`}>
                       {duplicateImportDetail(draft)}
@@ -1070,7 +1146,7 @@ export default function App() {
                     <div className="import-review-fields">
                       <input
                         value={draft.titleDraft}
-                        onChange={event => updateImportDraft(draft.sourcePath, { titleDraft: event.target.value })}
+                        onChange={event => updateImportDraft(draft.importId, { titleDraft: event.target.value })}
                         aria-label={`Title for ${draft.fileName}`}
                       />
                       <small>{draft.relativePath} · {formatBytes(draft.size)}</small>
@@ -1081,7 +1157,7 @@ export default function App() {
                     Collection
                     <input
                       value={draft.collectionNameDraft}
-                      onChange={event => updateImportDraft(draft.sourcePath, { collectionNameDraft: event.target.value })}
+                      onChange={event => updateImportDraft(draft.importId, { collectionNameDraft: event.target.value })}
                       placeholder="Optional project/collection"
                     />
                   </label>
@@ -1094,7 +1170,7 @@ export default function App() {
                           key={tag}
                           type="button"
                           className={draft.tagsDraft.includes(tag) ? 'active' : ''}
-                          onClick={() => toggleImportTag(draft.sourcePath, tag)}
+                          onClick={() => toggleImportTag(draft.importId, tag)}
                         >
                           #{tag}
                         </button>
@@ -1353,6 +1429,8 @@ export default function App() {
                 setSelectedItemIds(new Set());
                 setBulkTags(new Set());
                 setBulkTagTouched(new Set());
+                setBulkCollections(new Set());
+                setBulkCollectionTouched(new Set());
                 setShowBulkTagPicker(false);
                 setShowBulkCollectionPicker(false);
               }}>
@@ -1373,12 +1451,14 @@ export default function App() {
                 </button>
                 <button
                   onClick={() => {
-                    setShowBulkCollectionPicker(current => !current);
+                    setBulkCollections(new Set(bulkCollectionUsage.keys()));
+                    setBulkCollectionTouched(new Set());
+                    setShowBulkCollectionPicker(true);
                     setShowBulkTagPicker(false);
                   }}
                   disabled={selectedItemIds.size === 0 || collections.length === 0}
                 >
-                  Add to Collection
+                  Edit Collections
                 </button>
                 <button className="danger" onClick={deleteSelectedItems} disabled={selectedItemIds.size === 0}>Delete</button>
               </>}
@@ -1405,11 +1485,19 @@ export default function App() {
 
             {isSelectingItems && showBulkCollectionPicker && (
               <div className="bulk-action-panel">
-                <strong>Add selected items to a collection</strong>
-                <div className="bulk-choice-list collection-choice-list">
-                  {collections.map(collection => <button key={collection.id} onClick={() => addCollectionToSelectedItems(collection.id)}>
-                    {collection.name}
-                  </button>)}
+                <strong>Edit collections for selected items</strong>
+                <div className="bulk-choice-list">
+                  {collections.map(collection => <label key={collection.id}>
+                    <input type="checkbox" checked={bulkCollections.has(collection.id)} onChange={() => toggleBulkCollection(collection.id)} />
+                    <span>{collection.name}</span>
+                    {bulkCollectionUsage.has(collection.id) && <small>{bulkCollectionUsage.get(collection.id)}/{selectedItemIds.size}</small>}
+                  </label>)}
+                </div>
+                <div className="bulk-action-footer">
+                  <button onClick={() => setShowBulkCollectionPicker(false)}>Cancel</button>
+                  <button className="primary-action" onClick={applyBulkCollections} disabled={bulkCollectionTouched.size === 0}>
+                    Save Collection Changes
+                  </button>
                 </div>
               </div>
             )}
@@ -1520,13 +1608,22 @@ export default function App() {
                   </div>
                 )}
 
-                <label className="field-label">Collection</label>
+                <label className="field-label">Collections</label>
                 <div className="collection-picker">
                   {draftCollectionIds.length === 0 ? <span className="muted-label">No collections yet.</span> : collections
                     .filter(collection => draftCollectionIds.includes(collection.id))
                     .map(collection => <span key={collection.id}>{collection.name}</span>)}
                 </div>
-                {isEditing && <div className="edit-tags-wrap">
+                {isEditing && <div className="saved-tags-picker">
+                  <span className="muted-label">Add collections</span>
+                  {collections.map(collection => {
+                    const selectedCollection = draftCollectionIds.includes(collection.id);
+                    return <button key={collection.id} type="button" className={selectedCollection ? 'active' : ''} onClick={() => setDraftCollectionIds(current => (
+                      selectedCollection ? current.filter(id => id !== collection.id) : [...current, collection.id]
+                    ))}>{collection.name}</button>;
+                  })}
+                </div>}
+                {false && isEditing && <div className="edit-tags-wrap">
                   <button type="button" className="edit-tags-button" onClick={() => setShowEditCollectionPicker(current => !current)}>
                     Edit Collections <span>▾</span>
                   </button>
@@ -2012,6 +2109,19 @@ export default function App() {
             <div className="settings-actions">
               <button onClick={checkForUpdates}>Check for Updates</button>
             </div>
+          </section>
+
+          <section className="settings-section settings-logs">
+            <h2>Logs</h2>
+            <p>Use this when something weird happens and you want to see recent app startup or error details.</p>
+            <div className="settings-actions">
+              <button onClick={refreshLogs}>Refresh Logs</button>
+              <button onClick={openLogsFolder}>
+                <FolderOpen size={16} /> Open Logs Folder
+              </button>
+            </div>
+            {logPath && <code className="backup-path">{logPath}</code>}
+            <pre className="settings-log-output">{logText || 'No logs loaded yet.'}</pre>
           </section>
 
           <section className="settings-section settings-compact settings-maintenance">

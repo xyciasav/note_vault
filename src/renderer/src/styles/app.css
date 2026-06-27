@@ -1039,6 +1039,7 @@ body {
 .import-review-card.selected { border-color: #38bdf8; box-shadow: 0 0 0 2px rgba(56, 189, 248, .18); }
 .import-review-select { display: flex; align-items: center; gap: 8px; color: #bfdbfe; font-weight: 700; }
 .import-review-select input { accent-color: #38bdf8; }
+.import-review-select button { margin-left: auto; border: 1px solid #475569; border-radius: 8px; padding: 6px 8px; background: #172033; color: #dbeafe; cursor: pointer; font-size: 12px; }
 .import-duplicate-note { padding: 9px 10px; border-radius: 10px; font-size: 12px; line-height: 1.4; }
 .import-duplicate-note.exact { border: 1px solid #7f1d1d; background: #3f1d2a; color: #fecaca; }
 .import-duplicate-note.name-only { border: 1px solid #854d0e; background: #422006; color: #fde68a; }
@@ -1061,8 +1062,8 @@ body {
 
 .settings-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 18px;
   max-width: 1080px;
   margin-top: 24px;
 }
@@ -1070,10 +1071,11 @@ body {
 .settings-section {
   min-width: 0;
   padding: 22px;
-  background: #ffffff;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 18px;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+  background: #0f172a;
+  border: 1px solid #263449;
+  border-radius: 20px;
+  box-shadow: 0 16px 34px rgba(2, 6, 23, 0.18);
+  color: #e2e8f0;
 }
 
 .settings-backup {
@@ -1082,12 +1084,12 @@ body {
 
 .settings-section h2 {
   margin: 0 0 8px;
-  color: #0f172a;
+  color: #f8fafc;
 }
 
 .settings-section p {
   margin: 0;
-  color: #475569;
+  color: #94a3b8;
   line-height: 1.6;
 }
 
@@ -1114,7 +1116,7 @@ body {
   display: grid;
   gap: 8px;
   margin-top: 18px;
-  color: #334155;
+  color: #bfdbfe;
   font-weight: 700;
 }
 
@@ -1135,6 +1137,19 @@ body {
   font-weight: 500;
 }
 
+.settings-log-output {
+  max-height: 260px;
+  overflow: auto;
+  margin: 14px 0 0;
+  padding: 12px;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  background: #020617;
+  color: #cbd5e1;
+  white-space: pre-wrap;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
 .settings-control button {
   justify-self: start;
 }
@@ -1153,7 +1168,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  color: #334155;
+  color: #bfdbfe;
   font-weight: 700;
   cursor: pointer;
 }

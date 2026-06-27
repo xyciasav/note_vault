@@ -13,6 +13,8 @@ let mainWindow: BrowserWindow | null = null;
 let db: Database.Database;
 let filesDir = '';
 let backupsDir = '';
+let logsDir = '';
+let logPath = '';
 const defaultBackupsDir = () => path.join(app.getPath('userData'), 'backups');
 type BackupFrequency = 'on-close' | 'daily' | 'weekly' | 'never';
 type VaultSettings = {
@@ -26,6 +28,17 @@ let vaultSettings: VaultSettings;
 
 function settingsPath() {
   return path.join(app.getPath('userData'), 'vault-settings.json');
+}
+
+function writeLog(message: string, error?: unknown) {
+  try {
+    if (!logPath) return;
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    const detail = error instanceof Error ? ` ${error.stack || error.message}` : error ? ` ${String(error)}` : '';
+    fs.appendFileSync(logPath, `[${nowIso()}] ${message}${detail}\n`, 'utf8');
+  } catch {
+    // Avoid logging failures breaking the app.
+  }
 }
 
 function loadSettings() {
@@ -52,7 +65,10 @@ function saveSettings() {
 function ensureDirs() {
   const userData = app.getPath('userData');
   filesDir = path.join(userData, 'files');
+  logsDir = path.join(userData, 'logs');
+  logPath = path.join(logsDir, 'vault-notes.log');
   fs.mkdirSync(filesDir, { recursive: true });
+  fs.mkdirSync(logsDir, { recursive: true });
 }
 
 function initDb() {
@@ -385,6 +401,11 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '1.2.35': [
+    'Import review skip/import controls now target the exact file row more reliably.',
+    'Settings now includes a Logs card with recent app startup and error details.',
+    'Collection editing is cleaner with simple per-item collection buttons and bulk Edit Collections.'
+  ],
   '1.2.34': [
     'The import wizard now shows summary counts for selected files, duplicates, and name conflicts.',
     'Import review can be filtered by ready files, duplicates, name conflicts, images, or PDFs.',
@@ -668,6 +689,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   ensureDirs();
+  writeLog(`Vault Notes starting v${app.getVersion()}`);
   loadSettings();
   initDb();
   generateMissingImageThumbnails();
@@ -691,7 +713,26 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
+process.on('uncaughtException', error => {
+  writeLog('Uncaught exception', error);
+});
+
+process.on('unhandledRejection', reason => {
+  writeLog('Unhandled promise rejection', reason);
+});
+
 ipcMain.handle('app:getVersion', () => app.getVersion());
+ipcMain.handle('app:getLogs', () => {
+  if (!logPath || !fs.existsSync(logPath)) return { path: logPath, text: 'No logs yet.' };
+  return { path: logPath, text: fs.readFileSync(logPath, 'utf8').slice(-80_000) };
+});
+
+ipcMain.handle('app:openLogs', async () => {
+  fs.mkdirSync(logsDir, { recursive: true });
+  const error = await shell.openPath(logsDir);
+  if (error) throw new Error(error);
+  return { ok: true, path: logsDir };
+});
 
 ipcMain.handle('dashboard:summary', () => {
   const count = (where = '', params: unknown[] = []) =>
