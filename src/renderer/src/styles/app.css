@@ -1071,7 +1071,7 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 18px;
-  max-width: 1080px;
+  max-width: 1240px;
   margin-top: 24px;
 }
 
@@ -1085,7 +1085,9 @@ body {
   color: #0f172a;
 }
 
-.settings-backup {
+.settings-backup,
+.settings-logs,
+.settings-tags-manager {
   grid-column: 1 / -1;
 }
 
@@ -1105,6 +1107,11 @@ body {
   flex-wrap: wrap;
   gap: 12px;
   margin: 18px 0;
+}
+
+.settings-logs .settings-actions,
+.settings-tags-manager .settings-actions {
+  margin-bottom: 14px;
 }
 
 .settings-actions button {
@@ -1145,7 +1152,8 @@ body {
 }
 
 .settings-log-output {
-  max-height: 260px;
+  min-height: 320px;
+  max-height: min(52vh, 620px);
   overflow: auto;
   margin: 14px 0 0;
   padding: 12px;
@@ -1159,9 +1167,10 @@ body {
 
 .tag-manager-add { display: flex; gap: 8px; margin: 16px 0; }
 .tag-manager-add input, .tag-manager-row input { min-width: 0; flex: 1; border: 1px solid #cbd5e1; border-radius: 10px; padding: 9px 10px; background: #fff; color: #0f172a; }
-.tag-manager-list { display: grid; gap: 8px; max-height: 340px; overflow: auto; }
-.tag-manager-row { display: flex; align-items: center; gap: 8px; padding: 9px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
-.tag-manager-row span { flex: 1; color: #0f172a; font-weight: 800; }
+.tag-manager-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 8px; max-height: min(58vh, 680px); overflow: auto; padding-right: 4px; }
+.tag-manager-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 8px; padding: 9px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
+.tag-manager-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #0f172a; font-weight: 800; }
+.tag-manager-count { justify-self: start; min-width: 92px; text-align: center; border: 1px solid #cbd5e1; border-radius: 999px; padding: 4px 8px; background: #fff; color: #475569; font-size: 12px; font-weight: 800; }
 .tag-manager-add button, .tag-manager-row button { border: 1px solid #cbd5e1; border-radius: 9px; padding: 7px 10px; background: #fff; color: #1e3a8a; cursor: pointer; font-weight: 700; }
 .tag-manager-row .danger { color: #b91c1c; border-color: #fecaca; background: #fff1f2; }
 
@@ -1250,7 +1259,8 @@ body {
 .theme-dark .item-card.bulk-selected .tag-row span { background: #075985 !important; color: #f0f9ff !important; }
 .theme-dark .item-card.bulk-selected { background: #172b4d !important; border-color: #38bdf8 !important; box-shadow: 0 0 0 2px rgba(56, 189, 248, .28) !important; }
 .theme-dark .tag-manager-row { background: #0b1220; border-color: #334155; }
-.theme-dark .tag-manager-row span { color: #e2e8f0; }
+.theme-dark .tag-manager-name { color: #e2e8f0; }
+.theme-dark .tag-manager-count { background: #172033; color: #bfdbfe; border-color: #334155; }
 .theme-dark .tag-manager-add button,
 .theme-dark .tag-manager-row button { background: #172033; color: #dbeafe; border-color: #334155; }
 .theme-dark .tag-manager-row .danger { background: #3f1d2a; color: #fecaca; border-color: #7f1d1d; }

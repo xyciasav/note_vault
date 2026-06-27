@@ -404,6 +404,11 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '1.2.38': [
+    'Logs and Tags now get dedicated full-width space in Settings.',
+    'The tag manager now shows how many items are assigned to each tag.',
+    'Tag cleanup is easier with a wider grid-style tag manager.'
+  ],
   '1.2.37': [
     'Large uploads now show clearer progress while files are prepared and imported.',
     'Settings now includes a tag manager for adding, renaming, and deleting saved tags.',

@@ -100,6 +100,7 @@ function duplicateImportDetail(draft: ImportDraft) {
 export default function App() {
   const [items, setItems] = useState<VaultItem[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
+  const [tagRecords, setTagRecords] = useState<{ id?: string; name: string; count?: number }[]>([]);
   const [collections, setCollections] = useState<{ id: string; name: string }[]>([]);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -319,6 +320,7 @@ export default function App() {
 
   async function refreshTags() {
     const loadedTags = await window.vaultApi.listTags();
+    setTagRecords(loadedTags);
     setAllTags(loadedTags.map((tag: any) => tag.name));
     const dashboardSummary = await window.vaultApi.getDashboardSummary();
     setDashboard(dashboardSummary);
@@ -533,7 +535,10 @@ export default function App() {
       const scrollTop = itemsListRef.current?.scrollTop;
       setItems(current => current.map(item => item.id === updated.id ? updated : item));
       window.vaultApi.listTags()
-        .then(tags => setAllTags(tags.map((tag: any) => tag.name)))
+        .then(tags => {
+          setTagRecords(tags);
+          setAllTags(tags.map((tag: any) => tag.name));
+        })
         .catch(() => undefined);
       setSelectedId(updated.id);
       if (scrollTop !== undefined) {
@@ -2242,17 +2247,17 @@ export default function App() {
               <button onClick={createSettingsTag}>Add Tag</button>
             </div>
             <div className="tag-manager-list">
-              {allTags.length === 0 ? (
+              {tagRecords.length === 0 ? (
                 <span className="muted-label">No tags yet.</span>
-              ) : allTags.map(tag => (
-                <div key={tag} className="tag-manager-row">
-                  {renamingTag === tag ? (
+              ) : tagRecords.map(tag => (
+                <div key={tag.name} className="tag-manager-row">
+                  {renamingTag === tag.name ? (
                     <>
                       <input
                         value={renameTagText}
                         onChange={event => setRenameTagText(event.target.value)}
                         onKeyDown={event => {
-                          if (event.key === 'Enter') saveRenamedTag(tag);
+                          if (event.key === 'Enter') saveRenamedTag(tag.name);
                           if (event.key === 'Escape') {
                             setRenamingTag('');
                             setRenameTagText('');
@@ -2260,7 +2265,7 @@ export default function App() {
                         }}
                         autoFocus
                       />
-                      <button onClick={() => saveRenamedTag(tag)}>Save</button>
+                      <button onClick={() => saveRenamedTag(tag.name)}>Save</button>
                       <button onClick={() => {
                         setRenamingTag('');
                         setRenameTagText('');
@@ -2268,12 +2273,13 @@ export default function App() {
                     </>
                   ) : (
                     <>
-                      <span>#{tag}</span>
+                      <span className="tag-manager-name">#{tag.name}</span>
+                      <span className="tag-manager-count">{tag.count || 0} assigned</span>
                       <button onClick={() => {
-                        setRenamingTag(tag);
-                        setRenameTagText(tag);
+                        setRenamingTag(tag.name);
+                        setRenameTagText(tag.name);
                       }}>Edit</button>
-                      <button className="danger" onClick={() => deleteSettingsTag(tag)}>Delete</button>
+                      <button className="danger" onClick={() => deleteSettingsTag(tag.name)}>Delete</button>
                     </>
                   )}
                 </div>
