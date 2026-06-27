@@ -22,6 +22,8 @@ type AppView = 'dashboard' | 'library' | 'search' | 'settings';
 type BackupFrequency = 'on-close' | 'daily' | 'weekly' | 'never';
 type ImportFilter = 'all' | 'ready' | 'duplicates' | 'name-conflicts' | 'images' | 'pdfs';
 type SettingsTab = 'general' | 'tags' | 'logs';
+type LibraryViewMode = 'cards' | 'compact' | 'grid';
+type DetailTab = 'preview' | 'notes' | 'info';
 
 type ImportDraft = ImportPreview & {
   importId: string;
@@ -111,6 +113,12 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [itemSort, setItemSort] = useState<ItemSort>('updated');
+  const [libraryViewMode, setLibraryViewMode] = useState<LibraryViewMode>(() => {
+    const saved = localStorage.getItem('vault-notes-library-view');
+    return saved === 'compact' || saved === 'grid' || saved === 'cards' ? saved : 'cards';
+  });
+  const [detailTab, setDetailTab] = useState<DetailTab>('notes');
+  const [isDetailFocus, setIsDetailFocus] = useState(() => localStorage.getItem('vault-notes-detail-focus') === 'true');
 
   const [searchText, setSearchText] = useState('');
   const [searchType, setSearchType] = useState<TypeFilter>('all');
@@ -281,6 +289,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('vault-notes-theme', isDarkMode ? 'dark' : 'light');
   }, [isDarkMode]);
+
+  useEffect(() => {
+    localStorage.setItem('vault-notes-library-view', libraryViewMode);
+  }, [libraryViewMode]);
+
+  useEffect(() => {
+    localStorage.setItem('vault-notes-detail-focus', String(isDetailFocus));
+  }, [isDetailFocus]);
 
   useEffect(() => {
     localStorage.setItem('vault-notes-sidebar-width', String(sidebarWidth));
@@ -480,6 +496,7 @@ export default function App() {
         setDraftCollectionIds(selected.collection_ids || []);
         setDraftPrivate(Boolean(selected.private));
         setIsEditing(shouldEdit);
+        setDetailTab(selected.type === 'file' ? 'preview' : 'notes');
         if (shouldEdit) autoEditIdRef.current = null;
       }
       lastSelectedIdRef.current = selected.id;
@@ -1115,7 +1132,7 @@ export default function App() {
 
   return (
     <div
-      className={`app-shell ${isDarkMode ? 'theme-dark' : ''}`}
+      className={`app-shell ${isDarkMode ? 'theme-dark' : ''} ${appView === 'library' && isDetailFocus ? 'detail-focus' : ''}`}
       style={{ '--sidebar-width': `${sidebarWidth}px`, '--list-width': `${listWidth}px` } as React.CSSProperties}
       onDragOver={e => {
         e.preventDefault();
@@ -1464,7 +1481,7 @@ export default function App() {
       </aside>
 
       <div className="pane-resizer pane-resizer-sidebar" onMouseDown={() => setResizingPane('sidebar')} />
-      {appView === 'library' && <div className="pane-resizer pane-resizer-list" onMouseDown={() => setResizingPane('list')} />}
+      {appView === 'library' && !isDetailFocus && <div className="pane-resizer pane-resizer-list" onMouseDown={() => setResizingPane('list')} />}
 
       {appView === 'dashboard' ? (
         <main className="dashboard-panel">
@@ -1520,7 +1537,17 @@ export default function App() {
         </main>
       ) : appView === 'library' ? (
         <>
-          <section className="list-panel">
+          {!isDetailFocus && <section className="list-panel">
+            <div className="list-panel-header">
+              <div>
+                <span className="list-eyebrow">{activeCollection ? 'Collection' : 'Library'}</span>
+                <h2>{activeCollection?.name || (typeFilter === 'note' ? 'Notes' : typeFilter === 'file' ? 'Files' : 'All Items')}</h2>
+              </div>
+              <button type="button" onClick={() => setIsDetailFocus(true)} disabled={!selectedId}>
+                Focus
+              </button>
+            </div>
+
             <div className="search-box">
               <Search size={18} />
               <input
@@ -1540,6 +1567,23 @@ export default function App() {
                   <option value="tags">Tags</option>
                 </select>
               </label>
+            </div>
+
+            <div className="view-mode-toggle" aria-label="Library view mode">
+              {([
+                ['cards', 'Cards'],
+                ['compact', 'Compact'],
+                ['grid', 'Grid']
+              ] as [LibraryViewMode, string][]).map(([mode, label]) => (
+                <button
+                  type="button"
+                  key={mode}
+                  className={libraryViewMode === mode ? 'active' : ''}
+                  onClick={() => setLibraryViewMode(mode)}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
 
             <div className="bulk-toolbar">
@@ -1621,7 +1665,7 @@ export default function App() {
               </div>
             )}
 
-            <div className="items-list" ref={itemsListRef}>
+            <div className={`items-list items-list-${libraryViewMode}`} ref={itemsListRef}>
               {sortedItems.map(item => (
                 <div
                   key={item.id}
@@ -1665,7 +1709,7 @@ export default function App() {
                 </div>
               ))}
             </div>
-          </section>
+          </section>}
 
           <main className="detail-panel">
             {!selectedId ? (
@@ -1676,10 +1720,25 @@ export default function App() {
                   Create a note, upload a file, or drag music sheets, PDFs, tabs,
                   lyrics, and lesson files into this window.
                 </p>
+                {isDetailFocus && (
+                  <button className="empty-action" onClick={() => setIsDetailFocus(false)}>
+                    Show List
+                  </button>
+                )}
               </div>
             ) : (
               <>
                 <div className="detail-toolbar">
+                  {isDetailFocus ? (
+                    <button onClick={() => setIsDetailFocus(false)}>
+                      Show List
+                    </button>
+                  ) : (
+                    <button onClick={() => setIsDetailFocus(true)}>
+                      Focus
+                    </button>
+                  )}
+
                   <button onClick={beginEditing} disabled={isEditing}>
                     {isEditing ? 'Editing' : 'Edit'}
                   </button>
@@ -1719,8 +1778,29 @@ export default function App() {
                   <span>
                     {selected ? `Updated ${formatDate(selected.updated_at)}` : 'New note'}
                   </span>
+                  {selected?.favorite && <span>★ Favorite</span>}
+                  {selected?.private && <span>Private</span>}
                 </div>
 
+                <div className="detail-tabs" role="tablist" aria-label="Item detail tabs">
+                  {([
+                    ['preview', selected?.type === 'file' ? 'Preview' : 'Overview'],
+                    ['notes', 'Notes'],
+                    ['info', 'Info']
+                  ] as [DetailTab, string][]).map(([tab, label]) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      role="tab"
+                      className={detailTab === tab ? 'active' : ''}
+                      onClick={() => setDetailTab(tab)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {detailTab === 'info' && <>
                 <label className="private-toggle">
                   <input
                     type="checkbox"
@@ -1731,12 +1811,47 @@ export default function App() {
                   <span>Private — hide this item’s preview text in the library list</span>
                 </label>
 
-                {selected?.type === 'file' && selected.thumbnail_data && (
+                </>}
+
+                {detailTab === 'preview' && selected?.type === 'file' && selected.thumbnail_data && (
                   <div className="detail-file-preview">
                     <img src={selected.thumbnail_data} alt={selected.title || selected.file_name || 'File preview'} />
                   </div>
                 )}
 
+                {detailTab === 'preview' && selected?.type === 'file' && !selected.thumbnail_data && (
+                  <div className="detail-preview-card">
+                    <FolderOpen size={34} />
+                    <h3>{selected.file_name || 'Uploaded file'}</h3>
+                    <p>No image preview is available for this file type.</p>
+                  </div>
+                )}
+
+                {detailTab === 'preview' && selected?.type === 'file' && (
+                  <>
+                    <div className="detail-preview-actions">
+                      <button onClick={() => window.vaultApi.openFile(selected.id)}>
+                        <FolderOpen size={16} /> Open File
+                      </button>
+                      <button onClick={() => setDetailTab('notes')}>Edit Notes</button>
+                      <button onClick={() => setDetailTab('info')}>Edit Info</button>
+                    </div>
+                    <label className="field-label">Readable file text</label>
+                    <pre className="file-text-preview">
+                      {selected.extracted_text || 'No readable text was found in this file.'}
+                    </pre>
+                  </>
+                )}
+
+                {detailTab === 'preview' && selected?.type !== 'file' && (
+                  <div className="detail-preview-card">
+                    <FileText size={34} />
+                    <h3>{draftTitle || 'Untitled note'}</h3>
+                    <p>{draftBody || 'No note text yet.'}</p>
+                  </div>
+                )}
+
+                {detailTab === 'info' && <>
                 <label className="field-label">Collections</label>
                 <div className="collection-picker">
                   {draftCollectionIds.length === 0 ? <span className="muted-label">No collections yet.</span> : collections
@@ -1834,18 +1949,24 @@ export default function App() {
                     })}>#{tag}</button>;
                   })}
                 </div>}
+                </>}
 
+                {detailTab === 'notes' && <>
                 <label className="field-label">Notes</label>
 
                 <textarea
                   className="body-editor"
-                  value={selected?.type === 'file' ? (selected.extracted_text || 'No readable text was found in this file.') : draftBody}
-                  onChange={e => {
-                    if (selected?.type !== 'file') setDraftBody(e.target.value);
-                  }}
-                  disabled={!isEditing || selected?.type === 'file'}
+                  value={draftBody}
+                  onChange={e => setDraftBody(e.target.value)}
+                  disabled={!isEditing}
                   placeholder="Type lesson notes, theory reminders, chord progressions, song ideas, practice notes, links, or anything you want searchable..."
                 />
+                {selected?.type === 'file' && (
+                  <p className="muted-label">
+                    These are your notes about the file. The file's extracted text lives under Preview.
+                  </p>
+                )}
+                </>}
 
               </>
             )}

@@ -404,6 +404,11 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '1.2.41': [
+    'The Library now has Cards, Compact, and Grid view modes for the middle item pane.',
+    'The item detail pane is organized into Preview, Notes, and Info tabs.',
+    'Focus mode can hide the middle list so the selected item has more room.'
+  ],
   '1.2.40': [
     'Search result card titles and the app brand now stay readable in dark mode.',
     'Dashboard Tags now opens the Settings Tags tab.',
