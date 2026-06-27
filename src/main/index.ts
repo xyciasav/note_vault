@@ -227,12 +227,7 @@ function setTagsForItem(itemId: string, tagsInput: string[] | string | undefined
 }
 
 function cleanupUnusedTags() {
-  db.prepare(`
-    DELETE FROM tags
-    WHERE id NOT IN (
-      SELECT DISTINCT tag_id FROM item_tags
-    )
-  `).run();
+  // Keep unused tags so Settings can manage saved tag choices for future items.
 }
 
 function setCollectionsForItem(itemId: string, collectionIds: string[] | undefined) {
@@ -409,6 +404,11 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '1.2.37': [
+    'Large uploads now show clearer progress while files are prepared and imported.',
+    'Settings now includes a tag manager for adding, renaming, and deleting saved tags.',
+    'Saved tags can exist before they are assigned to items.'
+  ],
   '1.2.36': [
     'Settings in light mode now uses light cards again.',
     'Selected items in dark mode have stronger contrast so titles, previews, and tags stay readable.',
@@ -792,12 +792,51 @@ ipcMain.handle('items:list', (_event, args: { search?: string; tag?: string; typ
 
 ipcMain.handle('tags:list', () => {
   return db.prepare(`
-    SELECT DISTINCT tags.name
+    SELECT tags.id, tags.name, COUNT(item_tags.item_id) AS count
     FROM tags
-    JOIN item_tags ON item_tags.tag_id = tags.id
-    JOIN items ON items.id = item_tags.item_id
+    LEFT JOIN item_tags ON item_tags.tag_id = tags.id
+    GROUP BY tags.id, tags.name
     ORDER BY tags.name
   `).all();
+});
+
+ipcMain.handle('tags:create', (_event, name: string) => {
+  const trimmedName = name.trim();
+  if (!trimmedName) throw new Error('Tag name is required');
+  db.prepare('INSERT OR IGNORE INTO tags (id, name) VALUES (?, ?)').run(randomUUID(), trimmedName);
+  return db.prepare('SELECT id, name FROM tags WHERE name = ? COLLATE NOCASE').get(trimmedName);
+});
+
+ipcMain.handle('tags:rename', (_event, args: { oldName: string; newName: string }) => {
+  const oldName = args.oldName.trim();
+  const newName = args.newName.trim();
+  if (!oldName || !newName) throw new Error('Both tag names are required');
+  const oldTag = db.prepare('SELECT id FROM tags WHERE name = ? COLLATE NOCASE').get(oldName) as { id: string } | undefined;
+  if (!oldTag) throw new Error('Tag not found');
+  const existing = db.prepare('SELECT id FROM tags WHERE name = ? COLLATE NOCASE').get(newName) as { id: string } | undefined;
+
+  db.transaction(() => {
+    if (existing && existing.id !== oldTag.id) {
+      db.prepare('UPDATE OR IGNORE item_tags SET tag_id = ? WHERE tag_id = ?').run(existing.id, oldTag.id);
+      db.prepare('DELETE FROM tags WHERE id = ?').run(oldTag.id);
+    } else {
+      db.prepare('UPDATE tags SET name = ? WHERE id = ?').run(newName, oldTag.id);
+    }
+  })();
+
+  cleanupUnusedTags();
+  return { ok: true };
+});
+
+ipcMain.handle('tags:delete', (_event, name: string) => {
+  const trimmedName = name.trim();
+  const tag = db.prepare('SELECT id FROM tags WHERE name = ? COLLATE NOCASE').get(trimmedName) as { id: string } | undefined;
+  if (!tag) return { ok: true };
+  db.transaction(() => {
+    db.prepare('DELETE FROM item_tags WHERE tag_id = ?').run(tag.id);
+    db.prepare('DELETE FROM tags WHERE id = ?').run(tag.id);
+  })();
+  return { ok: true };
 });
 
 ipcMain.handle('collections:list', () => {

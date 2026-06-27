@@ -45,7 +45,10 @@ declare global {
       getDashboardSummary: () => Promise<{ totalItems: number; notes: number; files: number; favorites: number; collections: number; tags: number; recentItems: VaultItem[] }>;
       getPathForFile: (file: File) => string;
       listItems: (args?: { search?: string; tag?: string; type?: string; collectionId?: string }) => Promise<VaultItem[]>;
-      listTags: () => Promise<{ name: string }[]>;
+      listTags: () => Promise<{ id?: string; name: string; count?: number }[]>;
+      createTag: (name: string) => Promise<{ id: string; name: string }>;
+      renameTag: (oldName: string, newName: string) => Promise<{ ok: boolean }>;
+      deleteTag: (name: string) => Promise<{ ok: boolean }>;
       listCollections: () => Promise<{ id: string; name: string; created_at: string }[]>;
       createCollection: (name: string) => Promise<{ id: string; name: string; created_at: string }>;
       deleteCollection: (id: string) => Promise<{ ok: boolean }>;

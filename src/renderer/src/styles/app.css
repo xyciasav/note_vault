@@ -1060,6 +1060,11 @@ body {
 .import-review-preview p { margin: 0; white-space: pre-wrap; font-size: 12px; line-height: 1.45; }
 .import-review-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .import-review-actions .primary-action { background: #2563eb; color: #fff; border-color: #3b82f6; }
+.import-progress-floating { position: fixed; right: 22px; bottom: 22px; z-index: 60; width: min(360px, calc(100vw - 44px)); display: grid; gap: 7px; padding: 14px; border: 1px solid #334155; border-radius: 14px; background: #0f172a; color: #e2e8f0; box-shadow: 0 18px 45px rgba(0, 0, 0, .35); }
+.import-progress-card { display: grid; gap: 7px; padding: 11px 12px; border: 1px solid #334155; border-radius: 12px; background: #0b1220; color: #e2e8f0; }
+.import-progress-card div { display: flex; justify-content: space-between; gap: 12px; }
+.import-progress-floating small, .import-progress-card small { color: #94a3b8; overflow-wrap: anywhere; }
+.import-progress-floating progress, .import-progress-card progress { width: 100%; accent-color: #38bdf8; }
 @media (max-width: 760px) { .import-bulk-row { grid-template-columns: 1fr; } }
 
 .settings-grid {
@@ -1152,6 +1157,14 @@ body {
   font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 
+.tag-manager-add { display: flex; gap: 8px; margin: 16px 0; }
+.tag-manager-add input, .tag-manager-row input { min-width: 0; flex: 1; border: 1px solid #cbd5e1; border-radius: 10px; padding: 9px 10px; background: #fff; color: #0f172a; }
+.tag-manager-list { display: grid; gap: 8px; max-height: 340px; overflow: auto; }
+.tag-manager-row { display: flex; align-items: center; gap: 8px; padding: 9px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
+.tag-manager-row span { flex: 1; color: #0f172a; font-weight: 800; }
+.tag-manager-add button, .tag-manager-row button { border: 1px solid #cbd5e1; border-radius: 9px; padding: 7px 10px; background: #fff; color: #1e3a8a; cursor: pointer; font-weight: 700; }
+.tag-manager-row .danger { color: #b91c1c; border-color: #fecaca; background: #fff1f2; }
+
 .settings-control button {
   justify-self: start;
 }
@@ -1236,6 +1249,11 @@ body {
 .theme-dark .item-card.selected .tag-row span,
 .theme-dark .item-card.bulk-selected .tag-row span { background: #075985 !important; color: #f0f9ff !important; }
 .theme-dark .item-card.bulk-selected { background: #172b4d !important; border-color: #38bdf8 !important; box-shadow: 0 0 0 2px rgba(56, 189, 248, .28) !important; }
+.theme-dark .tag-manager-row { background: #0b1220; border-color: #334155; }
+.theme-dark .tag-manager-row span { color: #e2e8f0; }
+.theme-dark .tag-manager-add button,
+.theme-dark .tag-manager-row button { background: #172033; color: #dbeafe; border-color: #334155; }
+.theme-dark .tag-manager-row .danger { background: #3f1d2a; color: #fecaca; border-color: #7f1d1d; }
 
 .new-collection-form {
   display: flex;

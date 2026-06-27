@@ -138,6 +138,9 @@ export default function App() {
   const [isSaving, setIsSaving] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [newTagText, setNewTagText] = useState('');
+  const [settingsTagText, setSettingsTagText] = useState('');
+  const [renamingTag, setRenamingTag] = useState('');
+  const [renameTagText, setRenameTagText] = useState('');
   const [showEditCollectionPicker, setShowEditCollectionPicker] = useState(false);
   const [showSearchTagDropdown, setShowSearchTagDropdown] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
@@ -172,6 +175,7 @@ export default function App() {
     return Number.isFinite(saved) && saved >= 250 && saved <= 650 ? saved : 370;
   });
   const [resizingPane, setResizingPane] = useState<'sidebar' | 'list' | null>(null);
+  const [importProgress, setImportProgress] = useState<{ phase: string; current: number; total: number; fileName?: string } | null>(null);
 
   const selected = useMemo(() => {
     if (!selectedId) return null;
@@ -311,6 +315,13 @@ export default function App() {
     setDashboard(dashboardSummary);
 
     return loadedItems;
+  }
+
+  async function refreshTags() {
+    const loadedTags = await window.vaultApi.listTags();
+    setAllTags(loadedTags.map((tag: any) => tag.name));
+    const dashboardSummary = await window.vaultApi.getDashboardSummary();
+    setDashboard(dashboardSummary);
   }
 
   async function runFullSearch() {
@@ -636,9 +647,11 @@ export default function App() {
     }
 
     setIsPreparingImport(true);
+    setImportProgress({ phase: 'Preparing files', current: 0, total: fileInputs.length });
     setStatus(`Preparing ${fileInputs.length} file${fileInputs.length === 1 ? '' : 's'} for review...`);
     try {
       const previews = await window.vaultApi.previewImport(fileInputs);
+      setImportProgress({ phase: 'Ready for review', current: previews.length, total: fileInputs.length });
       setImportDrafts(previews.map((preview, index) => ({
         ...preview,
         importId: `${preview.sourcePath}-${index}`,
@@ -708,6 +721,11 @@ export default function App() {
     setStatus(`Set selected import files to collection "${collectionName}".`);
   }
 
+  function closeImportReview() {
+    setImportDrafts([]);
+    setImportProgress(null);
+  }
+
   async function commitImportDrafts() {
     const selectedDrafts = importDrafts.filter(draft => draft.selected);
     if (selectedDrafts.length === 0) {
@@ -716,6 +734,7 @@ export default function App() {
     }
 
     setIsImporting(true);
+    setImportProgress({ phase: 'Importing files', current: 0, total: selectedDrafts.length });
     try {
       const knownCollections = new Map(collections.map(collection => [collection.name.toLowerCase(), collection]));
       const createdCollections = new Map<string, { id: string; name: string }>();
@@ -723,6 +742,7 @@ export default function App() {
 
       for (let index = 0; index < selectedDrafts.length; index += 1) {
         const draft = selectedDrafts[index];
+        setImportProgress({ phase: 'Importing files', current: index + 1, total: selectedDrafts.length, fileName: draft.fileName });
         setStatus(`Importing ${index + 1} of ${selectedDrafts.length}: ${draft.fileName}`);
         const collectionName = collectionNameForDraft(draft);
         const collectionIds: string[] = [];
@@ -741,6 +761,7 @@ export default function App() {
       }
 
       setImportDrafts([]);
+      setImportProgress(null);
       setAppView('library');
       await refresh();
       if (lastItem) {
@@ -750,6 +771,7 @@ export default function App() {
       }
       setStatus(`Imported ${selectedDrafts.length} file${selectedDrafts.length === 1 ? '' : 's'}.`);
     } catch (err: any) {
+      setImportProgress(null);
       setStatus(`Import failed: ${err.message}`);
     } finally {
       setIsImporting(false);
@@ -763,6 +785,7 @@ export default function App() {
     try {
       await prepareImport(files);
     } catch (err: any) {
+      setImportProgress(null);
       setStatus(`Upload failed: ${err.message}`);
     } finally {
       e.target.value = '';
@@ -939,6 +962,7 @@ export default function App() {
     try {
       await prepareImport(files);
     } catch (err: any) {
+      setImportProgress(null);
       setStatus(`Upload failed: ${err.message}`);
     }
   }
@@ -1006,6 +1030,44 @@ export default function App() {
     }
   }
 
+  async function createSettingsTag() {
+    const tag = settingsTagText.trim();
+    if (!tag) return;
+    try {
+      await window.vaultApi.createTag(tag);
+      setSettingsTagText('');
+      await refreshTags();
+      setStatus(`Tag added: #${tag}`);
+    } catch (err: any) {
+      setStatus(`Could not add tag: ${err.message}`);
+    }
+  }
+
+  async function saveRenamedTag(oldName: string) {
+    const nextName = renameTagText.trim();
+    if (!nextName) return;
+    try {
+      await window.vaultApi.renameTag(oldName, nextName);
+      setRenamingTag('');
+      setRenameTagText('');
+      await refresh();
+      setStatus(`Renamed #${oldName} to #${nextName}.`);
+    } catch (err: any) {
+      setStatus(`Could not rename tag: ${err.message}`);
+    }
+  }
+
+  async function deleteSettingsTag(tag: string) {
+    if (!confirm(`Delete tag "#${tag}" from all items?`)) return;
+    try {
+      await window.vaultApi.deleteTag(tag);
+      await refresh();
+      setStatus(`Deleted tag: #${tag}`);
+    } catch (err: any) {
+      setStatus(`Could not delete tag: ${err.message}`);
+    }
+  }
+
   async function importBackup() {
     const ok = confirm('Importing a backup will replace the current local vault. Continue?');
 
@@ -1037,6 +1099,15 @@ export default function App() {
         </div>
       )}
 
+      {importProgress && importDrafts.length === 0 && (
+        <div className="import-progress-floating">
+          <strong>{importProgress.phase}</strong>
+          <span>{importProgress.current} of {importProgress.total}</span>
+          {importProgress.fileName && <small>{importProgress.fileName}</small>}
+          <progress value={importProgress.current} max={Math.max(1, importProgress.total)} />
+        </div>
+      )}
+
       {importDrafts.length > 0 && (
         <div className="import-review-backdrop">
           <section className="import-review-dialog" role="dialog" aria-modal="true" aria-label="Review import">
@@ -1048,7 +1119,7 @@ export default function App() {
                   Suggested tags and collections come from folder names and filenames. Exact duplicate files are skipped by default; same-name files stay selected with a warning.
                 </p>
               </div>
-              <button onClick={() => setImportDrafts([])} disabled={isImporting}>Cancel</button>
+              <button onClick={closeImportReview} disabled={isImporting}>Cancel</button>
             </div>
 
             <div className="import-review-tools">
@@ -1068,6 +1139,17 @@ export default function App() {
                 {importSummary.selected} selected · {importSummary.total} total · {importSummary.exactDuplicates} exact duplicates · {importSummary.nameConflicts} name conflicts
               </span>
             </div>
+
+            {importProgress && (
+              <div className="import-progress-card">
+                <div>
+                  <strong>{importProgress.phase}</strong>
+                  <span>{importProgress.current} of {importProgress.total}</span>
+                </div>
+                {importProgress.fileName && <small>{importProgress.fileName}</small>}
+                <progress value={importProgress.current} max={Math.max(1, importProgress.total)} />
+              </div>
+            )}
 
             <div className="import-filter-row">
               {([
@@ -1199,7 +1281,7 @@ export default function App() {
             </div>
 
             <div className="import-review-actions">
-              <button onClick={() => setImportDrafts([])} disabled={isImporting}>Cancel</button>
+              <button onClick={closeImportReview} disabled={isImporting}>Cancel</button>
               <button className="primary-action" onClick={commitImportDrafts} disabled={isImporting || isPreparingImport}>
                 {isImporting ? 'Importing...' : 'Import Selected'}
               </button>
@@ -2140,6 +2222,63 @@ export default function App() {
             </div>
             {logPath && <code className="backup-path">{logPath}</code>}
             <pre className="settings-log-output">{logText || 'No logs loaded yet.'}</pre>
+          </section>
+
+          <section className="settings-section settings-tags-manager">
+            <h2>Tags</h2>
+            <p>Add, rename, or delete saved tags. Deleting a tag removes it from every item.</p>
+            <div className="tag-manager-add">
+              <input
+                value={settingsTagText}
+                onChange={event => setSettingsTagText(event.target.value)}
+                onKeyDown={event => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    createSettingsTag();
+                  }
+                }}
+                placeholder="New tag name"
+              />
+              <button onClick={createSettingsTag}>Add Tag</button>
+            </div>
+            <div className="tag-manager-list">
+              {allTags.length === 0 ? (
+                <span className="muted-label">No tags yet.</span>
+              ) : allTags.map(tag => (
+                <div key={tag} className="tag-manager-row">
+                  {renamingTag === tag ? (
+                    <>
+                      <input
+                        value={renameTagText}
+                        onChange={event => setRenameTagText(event.target.value)}
+                        onKeyDown={event => {
+                          if (event.key === 'Enter') saveRenamedTag(tag);
+                          if (event.key === 'Escape') {
+                            setRenamingTag('');
+                            setRenameTagText('');
+                          }
+                        }}
+                        autoFocus
+                      />
+                      <button onClick={() => saveRenamedTag(tag)}>Save</button>
+                      <button onClick={() => {
+                        setRenamingTag('');
+                        setRenameTagText('');
+                      }}>Cancel</button>
+                    </>
+                  ) : (
+                    <>
+                      <span>#{tag}</span>
+                      <button onClick={() => {
+                        setRenamingTag(tag);
+                        setRenameTagText(tag);
+                      }}>Edit</button>
+                      <button className="danger" onClick={() => deleteSettingsTag(tag)}>Delete</button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
           </section>
 
           <section className="settings-section settings-compact settings-maintenance">
