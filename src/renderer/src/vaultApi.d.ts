@@ -29,6 +29,8 @@ export type ImportPreview = {
   suggestedTags: string[];
   suggestedCollectionName: string;
   duplicateName: boolean;
+  duplicateKind: 'none' | 'same-name' | 'same-file';
+  duplicateMatch?: { id: string; title: string; fileName: string } | null;
   extractedText: string;
   thumbnailData?: string | null;
 };

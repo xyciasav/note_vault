@@ -79,6 +79,22 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
   </>;
 }
 
+function duplicateImportLabel(draft: ImportDraft) {
+  if (draft.duplicateKind === 'same-file') return 'Duplicate file';
+  if (draft.duplicateKind === 'same-name') return 'Name already exists';
+  return 'Import';
+}
+
+function duplicateImportDetail(draft: ImportDraft) {
+  if (draft.duplicateKind === 'same-file') {
+    return `Exact same file already in vault: ${draft.duplicateMatch?.title || draft.duplicateMatch?.fileName || 'existing file'}.`;
+  }
+  if (draft.duplicateKind === 'same-name') {
+    return `Same filename as ${draft.duplicateMatch?.title || draft.duplicateMatch?.fileName || 'an existing file'}, but file contents look different.`;
+  }
+  return '';
+}
+
 export default function App() {
   const [items, setItems] = useState<VaultItem[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
@@ -579,7 +595,7 @@ export default function App() {
       const previews = await window.vaultApi.previewImport(fileInputs);
       setImportDrafts(previews.map(preview => ({
         ...preview,
-        selected: !preview.duplicateName,
+        selected: preview.duplicateKind !== 'same-file',
         titleDraft: preview.title,
         tagsDraft: [...new Set(preview.suggestedTags)],
         collectionNameDraft: selectedCollectionId
@@ -905,7 +921,7 @@ export default function App() {
                 <span className="item-type">Import Wizard</span>
                 <h2>Review before adding to your vault</h2>
                 <p>
-                  Suggested tags and collections come from folder names and filenames. Uncheck anything you do not want.
+                  Suggested tags and collections come from folder names and filenames. Exact duplicate files are skipped by default; same-name files stay selected with a warning.
                 </p>
               </div>
               <button onClick={() => setImportDrafts([])} disabled={isImporting}>Cancel</button>
@@ -938,8 +954,13 @@ export default function App() {
                       checked={draft.selected}
                       onChange={event => updateImportDraft(draft.sourcePath, { selected: event.target.checked })}
                     />
-                    <span>{draft.duplicateName ? 'Possible duplicate' : 'Import'}</span>
+                    <span>{draft.selected ? 'Import' : 'Skip'} · {duplicateImportLabel(draft)}</span>
                   </label>
+                  {duplicateImportDetail(draft) && (
+                    <div className={`import-duplicate-note ${draft.duplicateKind === 'same-file' ? 'exact' : 'name-only'}`}>
+                      {duplicateImportDetail(draft)}
+                    </div>
+                  )}
 
                   <div className="import-review-main">
                     {draft.thumbnailData && <img className="import-review-thumb" src={draft.thumbnailData} alt="" />}

@@ -1030,6 +1030,9 @@ body {
 .import-review-card.selected { border-color: #38bdf8; box-shadow: 0 0 0 2px rgba(56, 189, 248, .18); }
 .import-review-select { display: flex; align-items: center; gap: 8px; color: #bfdbfe; font-weight: 700; }
 .import-review-select input { accent-color: #38bdf8; }
+.import-duplicate-note { padding: 9px 10px; border-radius: 10px; font-size: 12px; line-height: 1.4; }
+.import-duplicate-note.exact { border: 1px solid #7f1d1d; background: #3f1d2a; color: #fecaca; }
+.import-duplicate-note.name-only { border: 1px solid #854d0e; background: #422006; color: #fde68a; }
 .import-review-main { display: flex; gap: 12px; align-items: center; min-width: 0; }
 .import-review-thumb { width: 58px; height: 58px; flex: 0 0 58px; object-fit: cover; border: 1px solid #334155; border-radius: 12px; background: #020617; }
 .import-review-fields { display: grid; gap: 5px; min-width: 0; flex: 1; }

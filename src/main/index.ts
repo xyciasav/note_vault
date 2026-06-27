@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from 'electro
 import path from 'path';
 import fs from 'fs';
 import Database from 'better-sqlite3';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import https from 'https';
 import AdmZip from 'adm-zip';
 import { PDFParse } from 'pdf-parse';
@@ -309,6 +309,16 @@ function suggestImportTags(sourcePath: string, relativePath = '') {
   return tokenizeImportText(parts.join(' '));
 }
 
+function fileHash(sourcePath: string) {
+  try {
+    const hash = createHash('sha256');
+    hash.update(fs.readFileSync(sourcePath));
+    return hash.digest('hex');
+  } catch {
+    return '';
+  }
+}
+
 function createRestoreBackup(targetPath: string) {
   const items = db.prepare('SELECT * FROM items ORDER BY created_at').all();
   const tags = db.prepare('SELECT * FROM tags ORDER BY name').all();
@@ -375,6 +385,11 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '1.2.33': [
+    'Import duplicate checks now compare file contents, not just filenames.',
+    'Exact duplicate files are skipped by default and explain which vault item they match.',
+    'Same-name files with different contents stay selected and show a clearer warning.'
+  ],
   '1.2.32': [
     'Search results now show match snippets with highlighted search terms.',
     'File previews are richer, including image previews and readable file text inside the app.',
@@ -851,11 +866,24 @@ ipcMain.handle('items:addCollection', (_event, ids: string[], collectionId: stri
 });
 
 ipcMain.handle('items:previewImport', async (_event, files: { sourcePath: string; relativePath?: string }[]) => {
-  const existingNames = new Set((db.prepare(`
-    SELECT lower(file_name) AS name
+  const existingFiles = db.prepare(`
+    SELECT id, title, file_name, file_stored_name, file_source_path, file_ext
     FROM items
     WHERE type = 'file' AND file_name IS NOT NULL
-  `).all() as { name: string }[]).map(row => row.name));
+  `).all() as { id: string; title: string; file_name: string; file_stored_name?: string; file_source_path?: string; file_ext?: string }[];
+
+  const existingByName = new Map<string, typeof existingFiles>();
+  const existingByHash = new Map<string, typeof existingFiles>();
+
+  for (const existing of existingFiles) {
+    const nameKey = existing.file_name.toLowerCase();
+    existingByName.set(nameKey, [...(existingByName.get(nameKey) || []), existing]);
+
+    const existingPath = existing.file_source_path || (existing.file_stored_name ? path.join(filesDir, existing.file_stored_name) : '');
+    if (!existingPath || !fs.existsSync(existingPath)) continue;
+    const hash = fileHash(existingPath);
+    if (hash) existingByHash.set(hash, [...(existingByHash.get(hash) || []), existing]);
+  }
 
   const previews = [];
   for (const file of files.slice(0, 500)) {
@@ -866,6 +894,13 @@ ipcMain.handle('items:previewImport', async (_event, files: { sourcePath: string
     const originalName = path.basename(file.sourcePath);
     const ext = path.extname(originalName).toLowerCase();
     const relativePath = file.relativePath || originalName;
+    const incomingHash = fileHash(file.sourcePath);
+    const sameNameMatches = existingByName.get(originalName.toLowerCase()) || [];
+    const sameFileMatches = incomingHash ? existingByHash.get(incomingHash) || [] : [];
+    const duplicateKind = sameFileMatches.length > 0
+      ? 'same-file'
+      : sameNameMatches.length > 0 ? 'same-name' : 'none';
+    const duplicateMatch = sameFileMatches[0] || sameNameMatches[0] || null;
     const topFolder = relativePath.includes('/') || relativePath.includes('\\')
       ? relativePath.split(/[\\/]+/).filter(Boolean)[0]
       : '';
@@ -880,7 +915,13 @@ ipcMain.handle('items:previewImport', async (_event, files: { sourcePath: string
       size: stat.size,
       suggestedTags: suggestImportTags(file.sourcePath, relativePath),
       suggestedCollectionName: topFolder || '',
-      duplicateName: existingNames.has(originalName.toLowerCase()),
+      duplicateName: sameNameMatches.length > 0,
+      duplicateKind,
+      duplicateMatch: duplicateMatch ? {
+        id: duplicateMatch.id,
+        title: duplicateMatch.title,
+        fileName: duplicateMatch.file_name
+      } : null,
       extractedText: extractedText.slice(0, 2000),
       thumbnailData: createThumbnailData(file.sourcePath, ext)
     });
