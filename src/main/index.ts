@@ -89,6 +89,7 @@ function initDb() {
       extracted_text TEXT DEFAULT '',
       thumbnail_data TEXT,
       favorite INTEGER DEFAULT 0,
+      private INTEGER DEFAULT 0,
       collection_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -136,6 +137,12 @@ function initDb() {
 
   try {
     db.exec('ALTER TABLE items ADD COLUMN thumbnail_data TEXT');
+  } catch {
+    // Existing databases already have this column after the first migration.
+  }
+
+  try {
+    db.exec('ALTER TABLE items ADD COLUMN private INTEGER DEFAULT 0');
   } catch {
     // Existing databases already have this column after the first migration.
   }
@@ -258,6 +265,7 @@ function rowToItem(row: any) {
   return {
     ...row,
     favorite: Boolean(row.favorite),
+    private: Boolean(row.private),
     tags: tagRows.map(t => t.name),
     collection_ids: collectionRows.map(collection => collection.id),
     collections: collectionRows,
@@ -401,6 +409,11 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '1.2.36': [
+    'Settings in light mode now uses light cards again.',
+    'Selected items in dark mode have stronger contrast so titles, previews, and tags stay readable.',
+    'Items can now be marked Private to mask their preview text in library and search result lists.'
+  ],
   '1.2.35': [
     'Import review skip/import controls now target the exact file row more reliably.',
     'Settings now includes a Logs card with recent app startup and error details.',
@@ -818,18 +831,19 @@ ipcMain.handle('items:createNote', (_event, args: { title: string; body?: string
   return getItem(id);
 });
 
-ipcMain.handle('items:update', (_event, args: { id: string; title?: string; body?: string; tags?: string[] | string; favorite?: boolean; collectionIds?: string[] }) => {
+ipcMain.handle('items:update', (_event, args: { id: string; title?: string; body?: string; tags?: string[] | string; favorite?: boolean; private?: boolean; collectionIds?: string[] }) => {
   const existing = getItem(args.id);
   if (!existing) throw new Error('Item not found');
 
   db.prepare(`
     UPDATE items
-    SET title = ?, body = ?, favorite = ?, updated_at = ?
+    SET title = ?, body = ?, favorite = ?, private = ?, updated_at = ?
     WHERE id = ?
   `).run(
     args.title ?? existing.title,
     args.body ?? existing.body,
     args.favorite === undefined ? Number(existing.favorite) : Number(args.favorite),
+    args.private === undefined ? Number(existing.private) : Number(args.private),
     nowIso(),
     args.id
   );
@@ -1121,6 +1135,7 @@ ipcMain.handle('backup:import', async () => {
         extracted_text,
         thumbnail_data,
         favorite,
+        private,
         collection_id,
         created_at,
         updated_at
@@ -1137,6 +1152,7 @@ ipcMain.handle('backup:import', async () => {
         @extracted_text,
         @thumbnail_data,
         @favorite,
+        @private,
         @collection_id,
         @created_at,
         @updated_at
@@ -1168,7 +1184,7 @@ ipcMain.handle('backup:import', async () => {
     }
 
     for (const item of backup.items) {
-      insertItem.run({ collection_id: null, file_source_path: null, thumbnail_data: null, ...item });
+      insertItem.run({ collection_id: null, file_source_path: null, thumbnail_data: null, private: 0, ...item });
     }
 
     for (const tag of backup.tags) {

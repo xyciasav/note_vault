@@ -10,6 +10,7 @@ export type VaultItem = {
   extracted_text?: string;
   thumbnail_data?: string | null;
   favorite: boolean;
+  private: boolean;
   collection_id?: string | null;
   collection_ids: string[];
   collections: { id: string; name: string }[];
@@ -49,7 +50,7 @@ declare global {
       createCollection: (name: string) => Promise<{ id: string; name: string; created_at: string }>;
       deleteCollection: (id: string) => Promise<{ ok: boolean }>;
       createNote: (args: { title: string; body?: string; tags?: string[] | string; collectionIds?: string[] }) => Promise<VaultItem>;
-      updateItem: (args: { id: string; title?: string; body?: string; tags?: string[] | string; favorite?: boolean; collectionIds?: string[] }) => Promise<VaultItem>;
+      updateItem: (args: { id: string; title?: string; body?: string; tags?: string[] | string; favorite?: boolean; private?: boolean; collectionIds?: string[] }) => Promise<VaultItem>;
       deleteItem: (id: string) => Promise<{ ok: boolean }>;
       deleteItems: (ids: string[]) => Promise<{ deleted: number }>;
       addTagsToItems: (ids: string[], tags: string[]) => Promise<{ updated: number }>;

@@ -131,6 +131,7 @@ export default function App() {
   const [draftBody, setDraftBody] = useState('');
   const [draftTags, setDraftTags] = useState('');
   const [draftCollectionIds, setDraftCollectionIds] = useState<string[]>([]);
+  const [draftPrivate, setDraftPrivate] = useState(false);
 
   const [status, setStatus] = useState('');
   const [isDragging, setIsDragging] = useState(false);
@@ -438,6 +439,7 @@ export default function App() {
         setDraftBody(selected.body || '');
         setDraftTags((selected.tags || []).join(', '));
         setDraftCollectionIds(selected.collection_ids || []);
+        setDraftPrivate(Boolean(selected.private));
         setIsEditing(shouldEdit);
         if (shouldEdit) autoEditIdRef.current = null;
       }
@@ -449,6 +451,7 @@ export default function App() {
       setDraftBody('');
       setDraftTags('');
       setDraftCollectionIds([]);
+      setDraftPrivate(false);
       lastSelectedIdRef.current = null;
     }
   }, [selected, selectedId]);
@@ -480,6 +483,7 @@ export default function App() {
       setDraftBody('');
       setDraftTags('');
       setDraftCollectionIds(selectedCollectionId ? [selectedCollectionId] : []);
+      setDraftPrivate(false);
 
       await refresh({
         search: '',
@@ -511,6 +515,7 @@ export default function App() {
         title: draftTitle.trim() || 'Untitled note',
         body: draftBody,
         tags: tagStringToArray(draftTags),
+        private: draftPrivate,
         collectionIds: draftCollectionIds
       });
 
@@ -610,6 +615,7 @@ export default function App() {
     setDraftBody(selected.body || '');
     setDraftTags((selected.tags || []).join(', '));
     setDraftCollectionIds(selected.collection_ids || []);
+    setDraftPrivate(Boolean(selected.private));
     setIsEditing(false);
   }
 
@@ -1534,7 +1540,7 @@ export default function App() {
                     <span className="item-type">{item.type}</span>
                   </div>
 
-                  <p>{item.body || item.file_name || 'No notes yet.'}</p>
+                  <p>{item.private ? '*****' : item.body || item.file_name || 'No notes yet.'}</p>
 
                   <div className="tag-row">
                     {(item.tags || []).slice(0, 4).map(tag => (
@@ -1601,6 +1607,16 @@ export default function App() {
                     {selected ? `Updated ${formatDate(selected.updated_at)}` : 'New note'}
                   </span>
                 </div>
+
+                <label className="private-toggle">
+                  <input
+                    type="checkbox"
+                    checked={draftPrivate}
+                    disabled={!isEditing}
+                    onChange={event => setDraftPrivate(event.target.checked)}
+                  />
+                  <span>Private — hide this item’s preview text in the library list</span>
+                </label>
 
                 {selected?.type === 'file' && selected.thumbnail_data && (
                   <div className="detail-file-preview">
@@ -1961,8 +1977,10 @@ export default function App() {
                   </div>
 
                   <p className="search-snippet">
-                    {searchSnippets.get(item.id) && <strong>{searchSnippets.get(item.id)?.label}: </strong>}
-                    <HighlightedText text={searchSnippets.get(item.id)?.text || item.body || item.file_name || 'No notes yet.'} query={searchText} />
+                    {item.private ? '*****' : <>
+                      {searchSnippets.get(item.id) && <strong>{searchSnippets.get(item.id)?.label}: </strong>}
+                      <HighlightedText text={searchSnippets.get(item.id)?.text || item.body || item.file_name || 'No notes yet.'} query={searchText} />
+                    </>}
                   </p>
 
                   <div className="tag-row">
