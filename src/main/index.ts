@@ -16,6 +16,7 @@ let backupsDir = '';
 let logsDir = '';
 let logPath = '';
 const defaultBackupsDir = () => path.join(app.getPath('userData'), 'backups');
+const maxBackupFileBytes = 1_900_000_000;
 type BackupFrequency = 'on-close' | 'daily' | 'weekly' | 'never';
 type WatchedFolder = {
   id: string;
@@ -482,11 +483,37 @@ function createRestoreBackup(targetPath: string) {
 
   const zip = new AdmZip();
   zip.addFile('backup.json', Buffer.from(JSON.stringify(backup, null, 2), 'utf8'));
+  const skippedFiles: { item_id: string; file_name: string; reason: string; size?: number }[] = [];
 
   for (const item of items as any[]) {
     if (!item.file_stored_name) continue;
     const filePath = path.join(filesDir, item.file_stored_name);
-    if (fs.existsSync(filePath)) zip.addLocalFile(filePath, 'files');
+    if (!fs.existsSync(filePath)) continue;
+    try {
+      const stat = fs.statSync(filePath);
+      if (stat.size > maxBackupFileBytes) {
+        skippedFiles.push({
+          item_id: item.id,
+          file_name: item.file_name || item.file_stored_name,
+          reason: 'File is too large for ZIP backup.',
+          size: stat.size
+        });
+        writeLog(`Backup skipped oversized file: ${item.file_name || item.file_stored_name} (${stat.size} bytes)`);
+        continue;
+      }
+      zip.addLocalFile(filePath, 'files');
+    } catch (error) {
+      skippedFiles.push({
+        item_id: item.id,
+        file_name: item.file_name || item.file_stored_name,
+        reason: error instanceof Error ? error.message : String(error)
+      });
+      writeLog(`Backup skipped file: ${item.file_name || item.file_stored_name}`, error);
+    }
+  }
+
+  if (skippedFiles.length > 0) {
+    zip.addFile('backup-skipped-files.json', Buffer.from(JSON.stringify(skippedFiles, null, 2), 'utf8'));
   }
 
   zip.writeZip(targetPath);
@@ -505,7 +532,12 @@ function createAutoBackupIfNeeded() {
 
   fs.mkdirSync(backupsDir, { recursive: true });
   const targetPath = path.join(backupsDir, `vault-notes-auto-${dateStamp()}.vaultbackup`);
-  createRestoreBackup(targetPath);
+  try {
+    createRestoreBackup(targetPath);
+  } catch (error) {
+    writeLog('Automatic backup failed', error);
+    return null;
+  }
   vaultSettings.lastAutoBackupAt = nowIso();
   saveSettings();
   return targetPath;
@@ -856,8 +888,10 @@ app.whenReady().then(() => {
   loadSettings();
   initDb();
   generateMissingImageThumbnails();
-  createAutoBackupIfNeeded();
   createWindow();
+  setTimeout(() => {
+    createAutoBackupIfNeeded();
+  }, 1500);
   mainWindow?.once('ready-to-show', async () => {
     await showWhatsNewIfUpdated().catch(() => undefined);
     checkForUpdates().catch(() => undefined);
