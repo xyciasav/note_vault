@@ -179,6 +179,7 @@ export default function App() {
   const watchedAutoScanRef = useRef(false);
   const importDraftsRef = useRef<ImportDraft[]>([]);
   const pendingWatchedReviewFilesRef = useRef<WatchedFolderFile[]>([]);
+  const pendingWatchedScanFolderIdRef = useRef<string | undefined>(undefined);
   const [dashboard, setDashboard] = useState<{ totalItems: number; notes: number; files: number; favorites: number; collections: number; tags: number; recentItems: VaultItem[] } | null>(null);
   const itemsListRef = useRef<HTMLDivElement | null>(null);
   const itemCardRefs = useRef(new Map<string, HTMLDivElement>());
@@ -720,7 +721,7 @@ export default function App() {
     return draft.collectionNameDraft.trim();
   }
 
-  async function prepareImportEntries(fileInputs: (WatchedFolderFile | { sourcePath: string; relativePath?: string })[]) {
+  async function prepareImportEntries(fileInputs: (WatchedFolderFile | { sourcePath: string; relativePath?: string })[], options?: { watchedFolderId?: string }) {
     if (fileInputs.length === 0) {
       throw new Error('Could not read file path from Electron.');
     }
@@ -729,12 +730,25 @@ export default function App() {
     pendingWatchedReviewFilesRef.current = fileInputs.filter((file): file is WatchedFolderFile =>
       'watchedFolderId' in file && Boolean(file.watchedFolderId)
     );
-    setImportProgress({ phase: 'Preparing files', current: 0, total: fileInputs.length });
-    setStatus(`Preparing ${fileInputs.length} file${fileInputs.length === 1 ? '' : 's'} for review...`);
+    pendingWatchedScanFolderIdRef.current = options?.watchedFolderId;
+    const isWatchedScan = pendingWatchedReviewFilesRef.current.length > 0;
+    setImportProgress({
+      phase: isWatchedScan ? 'Preparing watched files' : 'Preparing files',
+      current: isWatchedScan ? 1 : 0,
+      total: isWatchedScan ? 1 : fileInputs.length
+    });
+    setStatus(isWatchedScan
+      ? 'Preparing watched-folder files for review...'
+      : `Preparing ${fileInputs.length} file${fileInputs.length === 1 ? '' : 's'} for review...`
+    );
     try {
       const previewMeta = new Map(fileInputs.map(file => [file.sourcePath, file]));
       const previews = await window.vaultApi.previewImport(fileInputs);
-      setImportProgress({ phase: 'Ready for review', current: previews.length, total: fileInputs.length });
+      setImportProgress({
+        phase: 'Ready for review',
+        current: isWatchedScan ? 1 : previews.length,
+        total: isWatchedScan ? 1 : fileInputs.length
+      });
       setImportDrafts(previews.map((preview, index) => ({
         ...preview,
         watchedFolderId: (previewMeta.get(preview.sourcePath) as WatchedFolderFile | undefined)?.watchedFolderId,
@@ -825,11 +839,16 @@ export default function App() {
 
   async function markPendingWatchedFilesHandled() {
     const files = pendingWatchedReviewFilesRef.current;
-    if (files.length === 0) return 0;
+    const folderId = pendingWatchedScanFolderIdRef.current;
+    if (files.length === 0 && !folderId) return 0;
     pendingWatchedReviewFilesRef.current = [];
-    await window.vaultApi.markWatchedFilesSeen(files);
+    pendingWatchedScanFolderIdRef.current = undefined;
+    const result = await window.vaultApi.markWatchedScanHandled({ folderId });
+    if (result.handled === 0 && files.length > 0) {
+      await window.vaultApi.markWatchedFilesSeen(files);
+    }
     await refreshWatchedFolders();
-    return files.length;
+    return result.handled || files.length;
   }
 
   async function closeImportReview() {
@@ -1191,13 +1210,14 @@ export default function App() {
     }
   }
 
-  async function reviewWatchedFiles(files: WatchedFolderFile[], sourceLabel = 'watched folders') {
+  async function reviewWatchedFiles(files: WatchedFolderFile[], sourceLabel = 'watched folders', folderId?: string) {
     if (files.length === 0) {
       setStatus(`No new files found in ${sourceLabel}.`);
       return;
     }
 
-    await prepareImportEntries(files);
+    const scanFolderId = folderId || (files.length > 0 ? files[0].watchedFolderId : undefined);
+    await prepareImportEntries(files, { watchedFolderId: scanFolderId });
     setStatus(`Review ${files.length} new file${files.length === 1 ? '' : 's'} from ${sourceLabel}.`);
   }
 
@@ -1218,7 +1238,7 @@ export default function App() {
         return;
       }
 
-      await reviewWatchedFiles(files, folderId ? 'this watched folder' : 'watched folders');
+      await reviewWatchedFiles(files, folderId ? 'this watched folder' : 'watched folders', folderId);
     } catch (err: any) {
       setStatus(`Watched folder scan failed: ${err.message}`);
     }
@@ -1296,9 +1316,9 @@ export default function App() {
       {importProgress && importDrafts.length === 0 && (
         <div className="import-progress-floating">
           <strong>{importProgress.phase}</strong>
-          <span>{importProgress.current} of {importProgress.total}</span>
+          {importProgress.total > 1 && <span>{importProgress.current} of {importProgress.total}</span>}
           {importProgress.fileName && <small>{importProgress.fileName}</small>}
-          <progress value={importProgress.current} max={Math.max(1, importProgress.total)} />
+          {importProgress.total > 1 && <progress value={importProgress.current} max={Math.max(1, importProgress.total)} />}
         </div>
       )}
 

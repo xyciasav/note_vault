@@ -36,5 +36,6 @@ contextBridge.exposeInMainWorld('vaultApi', {
   removeWatchedFolder: (id: string) => ipcRenderer.invoke('watched:removeFolder', id),
   scanWatchedFolders: (args?: { markSeen?: boolean; folderId?: string }) => ipcRenderer.invoke('watched:scan', args),
   markWatchedFilesSeen: (files: { sourcePath: string; watchedFolderId?: string; watchedFolderPath?: string }[]) => ipcRenderer.invoke('watched:markSeen', files),
+  markWatchedScanHandled: (args?: { folderId?: string }) => ipcRenderer.invoke('watched:markScanHandled', args),
   checkForUpdates: () => ipcRenderer.invoke('updates:check')
 });

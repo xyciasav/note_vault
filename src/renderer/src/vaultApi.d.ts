@@ -92,6 +92,7 @@ declare global {
       removeWatchedFolder: (id: string) => Promise<{ ok: boolean }>;
       scanWatchedFolders: (args?: { markSeen?: boolean; folderId?: string }) => Promise<WatchedFolderFile[]>;
       markWatchedFilesSeen: (files: { sourcePath: string; watchedFolderId?: string; watchedFolderPath?: string }[]) => Promise<{ ok: boolean }>;
+      markWatchedScanHandled: (args?: { folderId?: string }) => Promise<{ ok: boolean; handled: number }>;
       checkForUpdates: () => Promise<{ updateAvailable: boolean; version?: string }>;
     };
   }

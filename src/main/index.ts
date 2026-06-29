@@ -426,7 +426,31 @@ function scanWatchedFolders(markSeen = false, folderId?: string) {
   }
 
   if (markSeen) saveSettings();
-  return foundFiles.slice(0, 500);
+  return foundFiles;
+}
+
+function markWatchedFolderScanHandled(folderId?: string) {
+  let handled = 0;
+
+  for (const folder of vaultSettings.watchedFolders) {
+    if (!folder.enabled) continue;
+    if (folderId && folder.id !== folderId) continue;
+    if (!fs.existsSync(folder.path)) continue;
+
+    const seen = new Set(folder.seenFiles || []);
+    const files = listWatchedFolderFiles(folder.path);
+    for (const file of files) {
+      if (!seen.has(file.signature)) {
+        seen.add(file.signature);
+        handled += 1;
+      }
+    }
+    folder.seenFiles = [...seen].slice(-20000);
+    folder.lastScanAt = nowIso();
+  }
+
+  saveSettings();
+  return { ok: true, handled };
 }
 
 function markWatchedFilesSeen(files: { sourcePath: string; watchedFolderId?: string; watchedFolderPath?: string }[]) {
@@ -443,7 +467,7 @@ function markWatchedFilesSeen(files: { sourcePath: string; watchedFolderId?: str
       const seen = new Set(folder.seenFiles || []);
       if (!seen.has(signature)) {
         seen.add(signature);
-        folder.seenFiles = [...seen].slice(-5000);
+        folder.seenFiles = [...seen].slice(-20000);
         changed = true;
       }
       folder.lastScanAt = nowIso();
@@ -1365,6 +1389,10 @@ ipcMain.handle('watched:scan', (_event, args: { markSeen?: boolean; folderId?: s
 
 ipcMain.handle('watched:markSeen', (_event, files: { sourcePath: string; watchedFolderId?: string; watchedFolderPath?: string }[]) => {
   return markWatchedFilesSeen(files);
+});
+
+ipcMain.handle('watched:markScanHandled', (_event, args: { folderId?: string } = {}) => {
+  return markWatchedFolderScanHandled(args.folderId);
 });
 
 ipcMain.handle('updates:check', () => checkForUpdates(true));
