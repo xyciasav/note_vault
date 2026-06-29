@@ -17,6 +17,7 @@ let logsDir = '';
 let logPath = '';
 const defaultBackupsDir = () => path.join(app.getPath('userData'), 'backups');
 const maxBackupFileBytes = 1_900_000_000;
+const maxHashFileBytes = 250_000_000;
 type BackupFrequency = 'on-close' | 'daily' | 'weekly' | 'never';
 type WatchedFolder = {
   id: string;
@@ -456,6 +457,10 @@ function markWatchedFilesSeen(files: { sourcePath: string; watchedFolderId?: str
 
 function fileHash(sourcePath: string) {
   try {
+    const stat = fs.statSync(sourcePath);
+    if (stat.size > maxHashFileBytes) {
+      return '';
+    }
     const hash = createHash('sha256');
     hash.update(fs.readFileSync(sourcePath));
     return hash.digest('hex');
@@ -715,12 +720,13 @@ function createThumbnailData(sourcePath: string, ext: string) {
   }
 }
 
-function generateMissingImageThumbnails() {
+function generateMissingImageThumbnails(limit = 75) {
   const imageItems = db.prepare(`
     SELECT id, file_stored_name, file_source_path, file_ext
     FROM items
     WHERE type = 'file' AND thumbnail_data IS NULL
-  `).all() as { id: string; file_stored_name?: string; file_source_path?: string; file_ext?: string }[];
+    LIMIT ?
+  `).all(limit) as { id: string; file_stored_name?: string; file_source_path?: string; file_ext?: string }[];
   const update = db.prepare('UPDATE items SET thumbnail_data = ? WHERE id = ?');
   for (const item of imageItems) {
     const sourcePath = item.file_source_path || (item.file_stored_name ? path.join(filesDir, item.file_stored_name) : '');
@@ -887,11 +893,17 @@ app.whenReady().then(() => {
   writeLog(`Vault Notes starting v${app.getVersion()}`);
   loadSettings();
   initDb();
-  generateMissingImageThumbnails();
   createWindow();
   setTimeout(() => {
     createAutoBackupIfNeeded();
-  }, 1500);
+  }, 12_000);
+  setTimeout(() => {
+    try {
+      generateMissingImageThumbnails();
+    } catch (error) {
+      writeLog('Background thumbnail generation failed', error);
+    }
+  }, 4_000);
   mainWindow?.once('ready-to-show', async () => {
     await showWhatsNewIfUpdated().catch(() => undefined);
     checkForUpdates().catch(() => undefined);
@@ -1156,20 +1168,16 @@ ipcMain.handle('items:previewImport', async (_event, files: { sourcePath: string
   `).all() as { id: string; title: string; file_name: string; file_stored_name?: string; file_source_path?: string; file_ext?: string }[];
 
   const existingByName = new Map<string, typeof existingFiles>();
-  const existingByHash = new Map<string, typeof existingFiles>();
 
   for (const existing of existingFiles) {
     const nameKey = existing.file_name.toLowerCase();
     existingByName.set(nameKey, [...(existingByName.get(nameKey) || []), existing]);
-
-    const existingPath = existing.file_source_path || (existing.file_stored_name ? path.join(filesDir, existing.file_stored_name) : '');
-    if (!existingPath || !fs.existsSync(existingPath)) continue;
-    const hash = fileHash(existingPath);
-    if (hash) existingByHash.set(hash, [...(existingByHash.get(hash) || []), existing]);
   }
 
   const previews = [];
-  for (const file of files.slice(0, 500)) {
+  const incomingFiles = files.slice(0, 500);
+  const useExactHashCheck = incomingFiles.length <= 25;
+  for (const file of incomingFiles) {
     if (!file.sourcePath || !fs.existsSync(file.sourcePath)) continue;
     const stat = fs.statSync(file.sourcePath);
     if (!stat.isFile()) continue;
@@ -1177,9 +1185,12 @@ ipcMain.handle('items:previewImport', async (_event, files: { sourcePath: string
     const originalName = path.basename(file.sourcePath);
     const ext = path.extname(originalName).toLowerCase();
     const relativePath = file.relativePath || originalName;
-    const incomingHash = fileHash(file.sourcePath);
     const sameNameMatches = existingByName.get(originalName.toLowerCase()) || [];
-    const sameFileMatches = incomingHash ? existingByHash.get(incomingHash) || [] : [];
+    const incomingHash = useExactHashCheck ? fileHash(file.sourcePath) : '';
+    const sameFileMatches = incomingHash ? sameNameMatches.filter(existing => {
+      const existingPath = existing.file_source_path || (existing.file_stored_name ? path.join(filesDir, existing.file_stored_name) : '');
+      return existingPath && fs.existsSync(existingPath) && fileHash(existingPath) === incomingHash;
+    }) : [];
     const duplicateKind = sameFileMatches.length > 0
       ? 'same-file'
       : sameNameMatches.length > 0 ? 'same-name' : 'none';

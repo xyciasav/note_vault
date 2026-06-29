@@ -178,6 +178,7 @@ export default function App() {
   const [watchedFolders, setWatchedFolders] = useState<WatchedFolder[]>([]);
   const watchedAutoScanRef = useRef(false);
   const importDraftsRef = useRef<ImportDraft[]>([]);
+  const pendingWatchedReviewFilesRef = useRef<WatchedFolderFile[]>([]);
   const [dashboard, setDashboard] = useState<{ totalItems: number; notes: number; files: number; favorites: number; collections: number; tags: number; recentItems: VaultItem[] } | null>(null);
   const itemsListRef = useRef<HTMLDivElement | null>(null);
   const itemCardRefs = useRef(new Map<string, HTMLDivElement>());
@@ -725,6 +726,9 @@ export default function App() {
     }
 
     setIsPreparingImport(true);
+    pendingWatchedReviewFilesRef.current = fileInputs.filter((file): file is WatchedFolderFile =>
+      'watchedFolderId' in file && Boolean(file.watchedFolderId)
+    );
     setImportProgress({ phase: 'Preparing files', current: 0, total: fileInputs.length });
     setStatus(`Preparing ${fileInputs.length} file${fileInputs.length === 1 ? '' : 's'} for review...`);
     try {
@@ -743,6 +747,12 @@ export default function App() {
           ? collections.find(collection => collection.id === selectedCollectionId)?.name || ''
           : preview.suggestedCollectionName
       })));
+      if (previews.length === 0 && pendingWatchedReviewFilesRef.current.length > 0) {
+        await markPendingWatchedFilesHandled();
+        setImportProgress(null);
+        setStatus('No readable watched-folder files needed review. Marked this scan handled.');
+        return;
+      }
       setStatus(`Review ${previews.length} file${previews.length === 1 ? '' : 's'} before importing.`);
     } finally {
       setIsPreparingImport(false);
@@ -813,14 +823,35 @@ export default function App() {
     setStatus(`Set selected import files to collection "${collectionName}".`);
   }
 
-  function closeImportReview() {
+  async function markPendingWatchedFilesHandled() {
+    const files = pendingWatchedReviewFilesRef.current;
+    if (files.length === 0) return 0;
+    pendingWatchedReviewFilesRef.current = [];
+    await window.vaultApi.markWatchedFilesSeen(files);
+    await refreshWatchedFolders();
+    return files.length;
+  }
+
+  async function closeImportReview() {
+    const handled = await markPendingWatchedFilesHandled();
     setImportDrafts([]);
     setImportProgress(null);
+    setStatus(handled > 0
+      ? 'Import review dismissed. Watched-folder files from this review will not be shown again.'
+      : 'Import review dismissed.'
+    );
   }
 
   async function commitImportDrafts() {
     const selectedDrafts = importDrafts.filter(draft => draft.selected);
     if (selectedDrafts.length === 0) {
+      if (pendingWatchedReviewFilesRef.current.length > 0) {
+        await markPendingWatchedFilesHandled();
+        setImportDrafts([]);
+        setImportProgress(null);
+        setStatus('Skipped watched-folder files. They will not be shown again.');
+        return;
+      }
       setStatus('Select at least one file to import.');
       return;
     }
@@ -852,18 +883,7 @@ export default function App() {
         lastItem = await uploadDraft(draft, collectionIds);
       }
 
-      const importedWatchedFiles = selectedDrafts
-        .filter(draft => draft.watchedFolderId || draft.watchedFolderPath)
-        .map(draft => ({
-          sourcePath: draft.sourcePath,
-          watchedFolderId: draft.watchedFolderId,
-          watchedFolderPath: draft.watchedFolderPath
-        }));
-
-      if (importedWatchedFiles.length > 0) {
-        await window.vaultApi.markWatchedFilesSeen(importedWatchedFiles);
-        await refreshWatchedFolders();
-      }
+      await markPendingWatchedFilesHandled();
 
       setImportDrafts([]);
       setImportProgress(null);
