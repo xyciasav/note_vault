@@ -287,6 +287,8 @@ body,
   width: 100%;
   height: 100%;
   overflow: hidden;
+  min-width: 0;
+  background: #0f172a;
 }
 
 .app-shell {
@@ -301,7 +303,10 @@ body,
 
 .sidebar,
 .list-panel,
-.detail-panel {
+.detail-panel,
+.search-panel,
+.settings-panel,
+.dashboard-panel {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -545,6 +550,21 @@ body,
   gap: 14px;
 }
 
+.search-view-toggle {
+  max-width: 260px;
+  margin: 0 0 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.search-results-grid.search-results-cards {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 980px;
+}
+
+.search-results-grid.search-results-grid .search-result-card {
+  min-height: 190px;
+}
+
 .search-result-card {
   text-align: left;
   display: flex;
@@ -587,6 +607,24 @@ body,
 
   .full-search-box input {
     font-size: 16px;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell:not(.detail-focus):not(.list-focus) {
+    grid-template-columns: minmax(76px, 190px) minmax(0, 1fr);
+  }
+
+  .app-shell:not(.detail-focus):not(.list-focus) .detail-panel {
+    display: none;
+  }
+
+  .app-shell:not(.detail-focus):not(.list-focus) .pane-resizer-list {
+    display: none;
+  }
+
+  .sidebar {
+    padding: 12px;
   }
 }
 
@@ -1238,15 +1276,19 @@ body {
   font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 
-.tag-manager-add { display: flex; gap: 8px; margin: 16px 0; }
+.tag-manager-add { display: flex; gap: 8px; margin: 16px 0 10px; }
 .tag-manager-add input, .tag-manager-row input { min-width: 0; flex: 1; border: 1px solid #cbd5e1; border-radius: 10px; padding: 9px 10px; background: #fff; color: #0f172a; }
+.tag-manager-bulk { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 14px; }
 .tag-manager-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 8px; max-height: min(58vh, 680px); overflow: auto; padding-right: 4px; }
-.tag-manager-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 8px; padding: 9px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
+.tag-manager-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center; gap: 8px; padding: 9px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
+.tag-manager-select, .tag-manager-select-spacer { width: 20px; display: inline-flex; align-items: center; justify-content: center; }
+.tag-manager-select input { width: 16px; height: 16px; accent-color: #2563eb; }
 .tag-manager-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #0f172a; font-weight: 800; }
 .tag-manager-count { justify-self: start; min-width: 92px; text-align: center; border: 1px solid #cbd5e1; border-radius: 999px; padding: 4px 8px; background: #fff; color: #475569; font-size: 12px; font-weight: 800; cursor: pointer; }
 .tag-manager-count:hover { border-color: #2563eb; color: #1d4ed8; background: #eff6ff; }
-.tag-manager-add button, .tag-manager-row button { border: 1px solid #cbd5e1; border-radius: 9px; padding: 7px 10px; background: #fff; color: #1e3a8a; cursor: pointer; font-weight: 700; }
-.tag-manager-row .danger { color: #b91c1c; border-color: #fecaca; background: #fff1f2; }
+.tag-manager-add button, .tag-manager-row button, .tag-manager-bulk button { border: 1px solid #cbd5e1; border-radius: 9px; padding: 7px 10px; background: #fff; color: #1e3a8a; cursor: pointer; font-weight: 700; }
+.tag-manager-add button:disabled, .tag-manager-row button:disabled, .tag-manager-bulk button:disabled { opacity: .55; cursor: not-allowed; }
+.tag-manager-row .danger, .tag-manager-bulk .danger { color: #b91c1c; border-color: #fecaca; background: #fff1f2; }
 
 .settings-control button {
   justify-self: start;
@@ -1380,8 +1422,10 @@ body {
 .theme-dark .tag-manager-name { color: #e2e8f0; }
 .theme-dark .tag-manager-count { background: #172033; color: #bfdbfe; border-color: #334155; }
 .theme-dark .tag-manager-add button,
-.theme-dark .tag-manager-row button { background: #172033; color: #dbeafe; border-color: #334155; }
-.theme-dark .tag-manager-row .danger { background: #3f1d2a; color: #fecaca; border-color: #7f1d1d; }
+.theme-dark .tag-manager-row button,
+.theme-dark .tag-manager-bulk button { background: #172033; color: #dbeafe; border-color: #334155; }
+.theme-dark .tag-manager-row .danger,
+.theme-dark .tag-manager-bulk .danger { background: #3f1d2a; color: #fecaca; border-color: #7f1d1d; }
 .theme-dark .settings-tabs button { background: #172033; color: #dbeafe; border-color: #334155; }
 .theme-dark .settings-tabs button.active { background: #2563eb; border-color: #60a5fa; color: #fff; }
 

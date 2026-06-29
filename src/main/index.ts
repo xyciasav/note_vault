@@ -401,7 +401,7 @@ async function extractText(sourcePath: string, ext: string) {
 function tokenizeImportText(value: string) {
   const ignored = new Set([
     'the', 'and', 'for', 'with', 'from', 'this', 'that', 'file', 'notes',
-    'music', 'vault', 'copy', 'final', 'draft', 'new', 'old'
+    'vault', 'copy', 'final', 'draft', 'new', 'old'
   ]);
 
   return [...new Set(value
@@ -487,7 +487,7 @@ function scanWatchedFolders(markSeen = false, folderId?: string) {
 
     if (markSeen) {
       const allSeen = new Set([...seen, ...newFiles.map(file => file.signature)]);
-      folder.seenFiles = [...allSeen].slice(-5000);
+        folder.seenFiles = [...allSeen].slice(-20000);
       folder.lastScanAt = nowIso();
     }
   }
@@ -567,7 +567,7 @@ function createRestoreBackup(targetPath: string) {
   const collections = db.prepare('SELECT * FROM collections ORDER BY name').all();
   const itemCollections = db.prepare('SELECT * FROM item_collections').all();
   const backup = {
-    app: 'Vault Notes',
+    app: 'Note Vault',
     version: 1,
     exported_at: nowIso(),
     items,
@@ -579,7 +579,10 @@ function createRestoreBackup(targetPath: string) {
 
   const zip = new AdmZip();
   zip.addFile('backup.json', Buffer.from(JSON.stringify(backup, null, 2), 'utf8'));
+  const externalFiles: { item_id: string; file_name: string; stored_name: string; relative_path: string; size: number }[] = [];
   const skippedFiles: { item_id: string; file_name: string; reason: string; size?: number }[] = [];
+  const sidecarDir = targetPath.replace(/\.(vaultbackup|zip)$/i, '') + '-large-files';
+  const sidecarFilesDir = path.join(sidecarDir, 'files');
 
   for (const item of items as any[]) {
     if (!item.file_stored_name) continue;
@@ -588,13 +591,16 @@ function createRestoreBackup(targetPath: string) {
     try {
       const stat = fs.statSync(filePath);
       if (stat.size > maxBackupFileBytes) {
-        skippedFiles.push({
+        fs.mkdirSync(sidecarFilesDir, { recursive: true });
+        fs.copyFileSync(filePath, path.join(sidecarFilesDir, item.file_stored_name));
+        externalFiles.push({
           item_id: item.id,
           file_name: item.file_name || item.file_stored_name,
-          reason: 'File is too large for ZIP backup.',
+          stored_name: item.file_stored_name,
+          relative_path: `files/${item.file_stored_name}`,
           size: stat.size
         });
-        writeLog(`Backup skipped oversized file: ${item.file_name || item.file_stored_name} (${stat.size} bytes)`);
+        writeLog(`Backup stored oversized file outside ZIP: ${item.file_name || item.file_stored_name} (${stat.size} bytes)`);
         continue;
       }
       zip.addLocalFile(filePath, 'files');
@@ -606,6 +612,18 @@ function createRestoreBackup(targetPath: string) {
       });
       writeLog(`Backup skipped file: ${item.file_name || item.file_stored_name}`, error);
     }
+  }
+
+  if (externalFiles.length > 0) {
+    const manifest = {
+      note: 'Large files are stored next to this backup in the matching -large-files folder.',
+      files: externalFiles
+    };
+    zip.addFile('backup-external-files.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'));
+    fs.writeFileSync(path.join(sidecarDir, 'backup-external-files.json'), JSON.stringify({
+      backup: path.basename(targetPath),
+      ...manifest
+    }, null, 2), 'utf8');
   }
 
   if (skippedFiles.length > 0) {
@@ -771,7 +789,7 @@ const whatsNewByVersion: Record<string, string[]> = {
   ],
   '1.2.17': [
     'Collections return to a simple, focused list.',
-    'Vault Notes now shows What’s New after an update, including upgrades from older versions.',
+    'Note Vault now shows What’s New after an update, including upgrades from older versions.',
     'Search previews and collection filtering remain available.'
   ]
 };
@@ -784,8 +802,8 @@ async function showWhatsNewIfUpdated() {
   if (previousVersion !== currentVersion) {
     await dialog.showMessageBox(mainWindow!, {
       type: 'info',
-      title: 'Vault Notes updated',
-      message: `You’re now using Vault Notes v${currentVersion}.`,
+      title: 'Note Vault updated',
+      message: `You’re now using Note Vault v${currentVersion}.`,
       detail: `What’s new:\n\n${changes.map(change => `• ${change}`).join('\n')}`,
       buttons: ['Got it'],
       defaultId: 0
@@ -882,13 +900,13 @@ function downloadReleaseAsset(asset: ReleaseAsset) {
 async function checkForUpdates(showCurrent = false) {
   const release = await fetchLatestRelease();
   if (!release || compareVersions(release.tagName, app.getVersion()) <= 0 || (!showCurrent && vaultSettings.skippedReleaseTag === release.tagName)) {
-    if (showCurrent) await dialog.showMessageBox(mainWindow!, { type: 'info', message: 'Vault Notes is up to date.' });
+    if (showCurrent) await dialog.showMessageBox(mainWindow!, { type: 'info', message: 'Note Vault is up to date.' });
     return { updateAvailable: false };
   }
 
   const result = await dialog.showMessageBox(mainWindow!, {
     type: 'info',
-    message: `Vault Notes ${release.tagName} is available. You are using ${app.getVersion()}.`,
+    message: `Note Vault ${release.tagName} is available. You are using ${app.getVersion()}.`,
     detail: 'Download the update now, skip this version, or decide later.',
     buttons: [release.assets.some(asset => /\.(exe|msi)$/i.test(asset.name)) ? 'Download update' : 'Open download page', 'Skip this version', 'Later'],
     defaultId: 0,
@@ -911,7 +929,7 @@ async function checkForUpdates(showCurrent = false) {
 function createReadableExport(targetPath: string) {
   const items = db.prepare('SELECT * FROM items ORDER BY created_at').all().map(rowToItem);
   const zip = new AdmZip();
-  const root = 'Music Notes Vault Export';
+  const root = 'Note Vault Export';
   const usedNoteNames = new Set<string>();
   const usedFileNames = new Set<string>();
   const indexEntries: string[] = [];
@@ -947,11 +965,11 @@ function createReadableExport(targetPath: string) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Music Notes Vault Export</title>
+  <title>Note Vault Export</title>
   <style>body{font-family:system-ui,sans-serif;max-width:760px;margin:40px auto;padding:0 20px;line-height:1.5;color:#1f2937}h1{margin-bottom:0}small{color:#6b7280;margin-left:.5rem}li{margin:.5rem 0}a{color:#2563eb}</style>
 </head>
 <body>
-  <h1>Music Notes Vault Export</h1>
+  <h1>Note Vault Export</h1>
   <p>Created ${escapeHtml(nowIso())}. Notes are in <code>Notes</code>; uploaded files are in <code>Files</code>.</p>
   <ul>${indexEntries.join('')}</ul>
 </body>
@@ -964,7 +982,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1540,
     height: 980,
-    title: 'Vault Notes',
+    title: 'Note Vault',
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -981,7 +999,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   ensureDirs();
-  writeLog(`Vault Notes starting v${app.getVersion()}`);
+  writeLog(`Note Vault starting v${app.getVersion()}`);
   loadSettings();
   initDb();
   createWindow();
@@ -1369,7 +1387,7 @@ ipcMain.handle('items:reindexFiles', async () => {
 ipcMain.handle('backup:export', async () => {
   const result = await dialog.showSaveDialog(mainWindow!, {
     title: 'Export Vault',
-    defaultPath: `music-notes-vault-export-${dateStamp()}.zip`,
+    defaultPath: `note-vault-export-${dateStamp()}.zip`,
     filters: [{ name: 'ZIP archive', extensions: ['zip'] }]
   });
 
@@ -1466,14 +1484,15 @@ ipcMain.handle('updates:check', () => checkForUpdates(true));
 
 ipcMain.handle('backup:import', async () => {
   const result = await dialog.showOpenDialog(mainWindow!, {
-    title: 'Import Vault Notes Backup',
+    title: 'Import Note Vault Backup',
     properties: ['openFile'],
-    filters: [{ name: 'Vault Notes Backup', extensions: ['vaultbackup', 'zip'] }]
+    filters: [{ name: 'Note Vault Backup', extensions: ['vaultbackup', 'zip'] }]
   });
 
   if (result.canceled || !result.filePaths[0]) return { canceled: true };
 
-  const zip = new AdmZip(result.filePaths[0]);
+  const backupPath = result.filePaths[0];
+  const zip = new AdmZip(backupPath);
   const backupEntry = zip.getEntry('backup.json');
 
   if (!backupEntry) {
@@ -1587,6 +1606,22 @@ ipcMain.handle('backup:import', async () => {
   for (const entry of fileEntries) {
     const fileName = path.basename(entry.entryName);
     fs.writeFileSync(path.join(filesDir, fileName), entry.getData());
+  }
+
+  const externalManifestEntry = zip.getEntry('backup-external-files.json');
+  if (externalManifestEntry) {
+    const sidecarDir = backupPath.replace(/\.(vaultbackup|zip)$/i, '') + '-large-files';
+    const externalManifest = JSON.parse(externalManifestEntry.getData().toString('utf8'));
+    for (const externalFile of externalManifest.files || []) {
+      const relativePath = String(externalFile.relative_path || '').replace(/^[/\\]+/, '');
+      const sourcePath = path.join(sidecarDir, relativePath);
+      const destName = path.basename(externalFile.stored_name || relativePath);
+      if (!destName || !fs.existsSync(sourcePath)) {
+        writeLog(`Backup restore missing external large file: ${externalFile.file_name || relativePath}`);
+        continue;
+      }
+      fs.copyFileSync(sourcePath, path.join(filesDir, destName));
+    }
   }
 
   cleanupUnusedTags();

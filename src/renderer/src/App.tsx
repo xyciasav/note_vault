@@ -22,6 +22,7 @@ type AppView = 'dashboard' | 'library' | 'search' | 'settings';
 type BackupFrequency = 'on-close' | 'daily' | 'weekly' | 'never';
 type ImportFilter = 'all' | 'ready' | 'duplicates' | 'name-conflicts' | 'images' | 'pdfs';
 type SettingsTab = 'general' | 'watch' | 'tags' | 'logs';
+type SearchViewMode = 'cards' | 'grid';
 type LibraryViewMode = 'cards' | 'compact' | 'grid';
 type DetailTab = 'preview' | 'notes' | 'info';
 
@@ -125,7 +126,12 @@ export default function App() {
   const [searchType, setSearchType] = useState<TypeFilter>('all');
   const [searchTags, setSearchTags] = useState<string[]>([]);
   const [searchTagsOnly, setSearchTagsOnly] = useState(false);
+  const [searchUntaggedOnly, setSearchUntaggedOnly] = useState(false);
   const [searchResults, setSearchResults] = useState<VaultItem[]>([]);
+  const [searchViewMode, setSearchViewMode] = useState<SearchViewMode>(() => {
+    const saved = localStorage.getItem('vault-notes-search-view');
+    return saved === 'grid' || saved === 'cards' ? saved : 'cards';
+  });
   const [showSearchTypeDropdown, setShowSearchTypeDropdown] = useState(false);
   const [showSearchScopeDropdown, setShowSearchScopeDropdown] = useState(false);
   const [searchCollectionId, setSearchCollectionId] = useState('');
@@ -153,6 +159,7 @@ export default function App() {
   const [settingsTagText, setSettingsTagText] = useState('');
   const [renamingTag, setRenamingTag] = useState('');
   const [renameTagText, setRenameTagText] = useState('');
+  const [selectedSettingsTags, setSelectedSettingsTags] = useState<Set<string>>(new Set());
   const [showEditCollectionPicker, setShowEditCollectionPicker] = useState(false);
   const [showSearchTagDropdown, setShowSearchTagDropdown] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
@@ -301,6 +308,10 @@ export default function App() {
   }, [libraryViewMode]);
 
   useEffect(() => {
+    localStorage.setItem('vault-notes-search-view', searchViewMode);
+  }, [searchViewMode]);
+
+  useEffect(() => {
     localStorage.setItem('vault-notes-detail-focus', String(isDetailFocus));
   }, [isDetailFocus]);
 
@@ -388,10 +399,11 @@ export default function App() {
     const filteredResults = results.filter(item => {
       const matchesTypedTag = !searchTagsOnly || !tagQuery ||
         (item.tags || []).some(tag => tag.toLowerCase().includes(tagQuery));
+      const matchesUntagged = !searchUntaggedOnly || (item.tags || []).length === 0;
       const matchesSelectedTags = searchTags.length === 0 || searchTags.every(tag =>
         (item.tags || []).some(itemTag => itemTag.toLowerCase() === tag.toLowerCase())
       );
-      return matchesTypedTag && matchesSelectedTags;
+      return matchesTypedTag && matchesSelectedTags && matchesUntagged;
     });
 
     setSearchResults(filteredResults);
@@ -404,6 +416,7 @@ export default function App() {
   function clearFullSearch() {
     setSearchText('');
     setSearchTags([]);
+    setSearchUntaggedOnly(false);
     setSearchTagsOnly(false);
     setSearchCollectionId('');
     setSearchType('all');
@@ -412,14 +425,15 @@ export default function App() {
   }
 
   function toggleSearchTag(tag: string) {
-  setSearchTags(currentTags => {
-    if (currentTags.includes(tag)) {
-      return currentTags.filter(existingTag => existingTag !== tag);
-    }
+    setSearchUntaggedOnly(false);
+    setSearchTags(currentTags => {
+      if (currentTags.includes(tag)) {
+        return currentTags.filter(existingTag => existingTag !== tag);
+      }
 
-    return [...currentTags, tag];
-  });
-}
+      return [...currentTags, tag];
+    });
+  }
 
   function openSearchResult(item: VaultItem) {
     setSearchPreviewItem(item);
@@ -457,6 +471,7 @@ export default function App() {
   function openSearchForTag(tag: string) {
     setSearchText('');
     setSearchTags([tag]);
+    setSearchUntaggedOnly(false);
     setSearchTagsOnly(false);
     setSearchType('all');
     setSearchCollectionId('');
@@ -498,7 +513,7 @@ export default function App() {
 
     return () => window.clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [appView, searchText, searchTags, searchType, searchTagsOnly, searchCollectionId]);
+}, [appView, searchText, searchTags, searchType, searchTagsOnly, searchUntaggedOnly, searchCollectionId]);
 
   useEffect(() => {
     if (appView === 'settings') {
@@ -1143,7 +1158,7 @@ export default function App() {
 
   async function checkForUpdates() {
     const result = await window.vaultApi.checkForUpdates();
-    if (!result.updateAvailable) setStatus('Vault Notes is up to date.');
+    if (!result.updateAvailable) setStatus('Note Vault is up to date.');
   }
 
   async function reindexFiles() {
@@ -1230,7 +1245,7 @@ export default function App() {
       }
 
       const shouldReview = auto
-        ? confirm(`Vault Notes found ${files.length} new file${files.length === 1 ? '' : 's'} in watched folders. Review them now?`)
+        ? confirm(`Note Vault found ${files.length} new file${files.length === 1 ? '' : 's'} in watched folders. Review them now?`)
         : true;
 
       if (!shouldReview) {
@@ -1275,10 +1290,40 @@ export default function App() {
     if (!confirm(`Delete tag "#${tag}" from all items?`)) return;
     try {
       await window.vaultApi.deleteTag(tag);
+      setSelectedSettingsTags(current => {
+        const next = new Set(current);
+        next.delete(tag);
+        return next;
+      });
       await refresh();
       setStatus(`Deleted tag: #${tag}`);
     } catch (err: any) {
       setStatus(`Could not delete tag: ${err.message}`);
+    }
+  }
+
+  function toggleSettingsTagSelection(tag: string) {
+    setSelectedSettingsTags(current => {
+      const next = new Set(current);
+      if (next.has(tag)) next.delete(tag);
+      else next.add(tag);
+      return next;
+    });
+  }
+
+  async function deleteSelectedSettingsTags() {
+    const tags = [...selectedSettingsTags];
+    if (tags.length === 0) return;
+    if (!confirm(`Delete ${tags.length} selected tag${tags.length === 1 ? '' : 's'} from all items?`)) return;
+    try {
+      for (const tag of tags) {
+        await window.vaultApi.deleteTag(tag);
+      }
+      setSelectedSettingsTags(new Set());
+      await refresh();
+      setStatus(`Deleted ${tags.length} selected tag${tags.length === 1 ? '' : 's'}.`);
+    } catch (err: any) {
+      setStatus(`Could not delete selected tags: ${err.message}`);
     }
   }
 
@@ -1398,7 +1443,7 @@ export default function App() {
                         addTagToSelectedImports();
                       }
                     }}
-                    placeholder="practice, lyrics, tab..."
+                    placeholder="ideas, project, reference..."
                   />
                   <button type="button" onClick={addTagToSelectedImports}>Add Tag</button>
                 </div>
@@ -1507,7 +1552,7 @@ export default function App() {
       <aside className="sidebar">
         <div className="brand">
           <Archive size={26} />
-          <span>Music Notes Vault {appVersion && <small>v{appVersion}</small>}</span>
+          <span>Note Vault {appVersion && <small>v{appVersion}</small>}</span>
         </div>
 
         <button className="primary" onClick={createNote} disabled={isCreating}>
@@ -1654,7 +1699,7 @@ export default function App() {
           <div className="dashboard-header">
             <div>
               <h1>Vault Dashboard</h1>
-              <p>Your music notes, files, and projects at a glance.</p>
+              <p>Your notes, files, and collections at a glance.</p>
             </div>
             <button className="dashboard-new-note" onClick={createNote} disabled={isCreating}>
               <Plus size={16} /> {isCreating ? 'Creating...' : 'New Note'}
@@ -1666,7 +1711,7 @@ export default function App() {
               <span>All Items</span><strong>{dashboard?.totalItems ?? 0}</strong><small>Everything in your vault</small>
             </button>
             <button className="dashboard-card" onClick={() => openDashboardLibrary('note')}>
-              <span>Notes</span><strong>{dashboard?.notes ?? 0}</strong><small>Ideas, lessons, and lyrics</small>
+              <span>Notes</span><strong>{dashboard?.notes ?? 0}</strong><small>Ideas, plans, and reference notes</small>
             </button>
             <button className="dashboard-card" onClick={() => openDashboardLibrary('file')}>
               <span>Files</span><strong>{dashboard?.files ?? 0}</strong><small>Uploaded documents and assets</small>
@@ -1883,8 +1928,8 @@ export default function App() {
                 <Archive size={52} />
                 <h2>Your vault is ready</h2>
                 <p>
-                  Create a note, upload a file, or drag music sheets, PDFs, tabs,
-                  lyrics, and lesson files into this window.
+                  Create a note, upload a file, or drag PDFs, images, docs,
+                  screenshots, receipts, and reference files into this window.
                 </p>
                 {isDetailFocus && (
                   <button className="empty-action" onClick={showSplitLibrary}>
@@ -2087,7 +2132,7 @@ export default function App() {
                     value={newTagText}
                     disabled={!isEditing}
                     onChange={e => setNewTagText(e.target.value)}
-                    placeholder="Add tag, like theory or scales"
+                    placeholder="Add tag, like work or tax"
                     onKeyDown={e => {
                       if (e.key !== 'Enter') return;
                       e.preventDefault();
@@ -2125,7 +2170,7 @@ export default function App() {
                   value={draftBody}
                   onChange={e => setDraftBody(e.target.value)}
                   disabled={!isEditing}
-                  placeholder="Type lesson notes, theory reminders, chord progressions, song ideas, practice notes, links, or anything you want searchable..."
+                  placeholder="Type meeting notes, project ideas, research, links, reminders, or anything you want searchable..."
                 />
                 {selected?.type === 'file' && (
                   <p className="muted-label">
@@ -2146,7 +2191,7 @@ export default function App() {
             <div>
               <h1>Search Vault</h1>
               <p>
-                Search by note text, file name, tags, theory topics, songs, or lesson notes.
+                Search by note text, file name, tags, projects, people, tasks, or reference notes.
               </p>
             </div>
 
@@ -2158,7 +2203,7 @@ export default function App() {
             <input
               value={searchText}
               onChange={e => setSearchText(e.target.value)}
-              placeholder="Search chords, scales, song names, notes, files..."
+              placeholder="Search tasks, projects, people, notes, files..."
               autoFocus
             />
           </div>
@@ -2299,7 +2344,7 @@ export default function App() {
     }}
   >
     {searchTags.length === 0
-      ? 'All Tags'
+      ? searchUntaggedOnly ? 'Not Tagged' : 'All Tags'
       : `${searchTags.length} tag${searchTags.length === 1 ? '' : 's'} selected`}
     <span>▾</span>
   </button>
@@ -2309,10 +2354,25 @@ export default function App() {
       <button
         type="button"
         className="tag-clear-button"
-        onClick={() => setSearchTags([])}
+        onClick={() => {
+          setSearchTags([]);
+          setSearchUntaggedOnly(false);
+        }}
       >
-        Clear tag selection
+        Clear tag filters
       </button>
+
+      <label className="search-tag-checkbox-row">
+        <input
+          type="checkbox"
+          checked={searchUntaggedOnly}
+          onChange={event => {
+            setSearchUntaggedOnly(event.target.checked);
+            if (event.target.checked) setSearchTags([]);
+          }}
+        />
+        <span>All not tagged</span>
+      </label>
 
       {allTags.length === 0 ? (
         <div className="tag-picker-empty">No tags yet.</div>
@@ -2340,24 +2400,41 @@ export default function App() {
               {searchResults.length} result{searchResults.length === 1 ? '' : 's'}
             </span>
 
-            {(searchText || searchTags.length > 0 || searchType !== 'all') && (
-  <small>
+            {(searchText || searchTags.length > 0 || searchUntaggedOnly || searchType !== 'all') && (
+              <small>
     {searchText && <>Text: “{searchText}” </>}
-    {searchTags.length > 0 && (
-      <>Tags: {searchTags.map(tag => `#${tag}`).join(', ')} </>
-    )}
-    {searchType !== 'all' && <>Type: {searchType}</>}
-  </small>
-)}
+                {searchTags.length > 0 && (
+                  <>Tags: {searchTags.map(tag => `#${tag}`).join(', ')} </>
+                )}
+                {searchUntaggedOnly && <>Tags: all not tagged </>}
+                {searchType !== 'all' && <>Type: {searchType}</>}
+              </small>
+            )}
           </div>
 
-          <div className="search-results-grid">
+          <div className="view-mode-toggle search-view-toggle" aria-label="Search view mode">
+            {([
+              ['cards', 'Cards'],
+              ['grid', 'Grid']
+            ] as [SearchViewMode, string][]).map(([mode, label]) => (
+              <button
+                type="button"
+                key={mode}
+                className={searchViewMode === mode ? 'active' : ''}
+                onClick={() => setSearchViewMode(mode)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className={`search-results-grid search-results-${searchViewMode}`}>
             {searchResults.length === 0 ? (
               <div className="empty-state search-empty">
                 <Search size={48} />
                 <h2>No results yet</h2>
                 <p>
-                  Try searching a topic, tag, song name, chord, scale, or uploaded file name.
+                  Try searching a topic, tag, project, person, task, note, or uploaded file name.
                 </p>
               </div>
             ) : (
@@ -2484,7 +2561,7 @@ export default function App() {
           <div className="settings-grid">
           <section className="settings-section settings-compact">
             <h2>Appearance</h2>
-            <p>Use a darker palette that is easier on the eyes during long writing or practice sessions.</p>
+            <p>Use a darker palette that is easier on the eyes during long writing or organizing sessions.</p>
             <label className="theme-toggle">
               <input type="checkbox" checked={isDarkMode} onChange={event => setIsDarkMode(event.target.checked)} />
               <span>Dark Mode</span>
@@ -2495,7 +2572,7 @@ export default function App() {
             <h2>Backup & Export</h2>
             <p>
               Export creates a normal ZIP with Markdown notes, your original files, and an
-              <code> index.html </code> page. You can open it without Vault Notes.
+              <code> index.html </code> page. You can open it without Note Vault.
             </p>
 
             <div className="settings-actions">
@@ -2538,7 +2615,7 @@ export default function App() {
           <section className="settings-section settings-compact">
             <h2>Updates</h2>
             <p>
-              Vault Notes checks GitHub Releases when it opens. When a newer version is available,
+              Note Vault checks GitHub Releases when it opens. When a newer version is available,
               you can open its download page, skip that version, or decide later.
             </p>
             <div className="settings-actions">
@@ -2549,7 +2626,7 @@ export default function App() {
           <section className="settings-section settings-watch-manager">
             <h2>Watched Folders</h2>
             <p>
-              Use local folders like an import inbox. Vault Notes scans when a folder is first added,
+              Use local folders like an import inbox. Note Vault scans when a folder is first added,
               then watches for new files to review. Imported files are copied into the vault, so you can
               clean up the original folder afterward.
             </p>
@@ -2565,7 +2642,7 @@ export default function App() {
             <div className="watched-folder-list">
               {watchedFolders.length === 0 ? (
                 <div className="watched-folder-empty">
-                  No watched folders yet. Add a lyrics, downloads, samples, or project folder to start.
+                  No watched folders yet. Add Downloads, Documents, Screenshots, or a project folder to start.
                 </div>
               ) : watchedFolders.map(folder => (
                 <div key={folder.id} className="watched-folder-row">
@@ -2613,6 +2690,30 @@ export default function App() {
               />
               <button onClick={createSettingsTag}>Add Tag</button>
             </div>
+            <div className="tag-manager-bulk">
+              <button
+                type="button"
+                onClick={() => setSelectedSettingsTags(new Set(settingsTagRecords.map(tag => tag.name)))}
+                disabled={settingsTagRecords.length === 0}
+              >
+                Select All
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedSettingsTags(new Set())}
+                disabled={selectedSettingsTags.size === 0}
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                className="danger"
+                onClick={deleteSelectedSettingsTags}
+                disabled={selectedSettingsTags.size === 0}
+              >
+                Delete Selected{selectedSettingsTags.size > 0 ? ` (${selectedSettingsTags.size})` : ''}
+              </button>
+            </div>
             <div className="tag-manager-list">
               {settingsTagRecords.length === 0 ? (
                 <span className="muted-label">No tags yet.</span>
@@ -2620,6 +2721,7 @@ export default function App() {
                 <div key={tag.name} className="tag-manager-row">
                   {renamingTag === tag.name ? (
                     <>
+                      <span className="tag-manager-select-spacer" />
                       <input
                         value={renameTagText}
                         onChange={event => setRenameTagText(event.target.value)}
@@ -2640,6 +2742,13 @@ export default function App() {
                     </>
                   ) : (
                     <>
+                      <label className="tag-manager-select" title={`Select ${tag.name}`}>
+                        <input
+                          type="checkbox"
+                          checked={selectedSettingsTags.has(tag.name)}
+                          onChange={() => toggleSettingsTagSelection(tag.name)}
+                        />
+                      </label>
                       <span className="tag-manager-name">#{tag.name}</span>
                       <button
                         type="button"

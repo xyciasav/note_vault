@@ -1,8 +1,8 @@
-# Vault Notes
+# Note Vault
 
-Vault Notes is a local-first Windows desktop app for keeping notes, documents, images, lyrics, tabs, PDFs, sound assets, lesson material, and project resources in one searchable vault.
+Note Vault is a local-first desktop app for keeping notes, documents, images, PDFs, screenshots, receipts, reference files, and project resources in one searchable vault.
 
-It was built around a music-notes workflow, but it works well for any personal library where notes and files need to live together with tags, collections, search, previews, and backups.
+It is built for a personal knowledge library where notes and files live together with tags, collections, search, previews, and backups.
 
 Everything is stored on the computer running the app. There is no account, cloud service, subscription, or sync requirement.
 
@@ -47,7 +47,7 @@ Everything is stored on the computer running the app. There is no account, cloud
 
 ### File indexing and previews
 
-Vault Notes extracts searchable text from supported files when they are imported.
+Note Vault extracts searchable text from supported files when they are imported.
 
 Supported searchable file types:
 
@@ -63,7 +63,7 @@ Image files receive thumbnails for easier browsing. Text-based PDFs are searchab
 
 ### Import review wizard
 
-When importing multiple files or a folder, Vault Notes opens a review step before adding everything.
+When importing multiple files or a folder, Note Vault opens a review step before adding everything.
 
 The import wizard can:
 
@@ -118,14 +118,14 @@ Settings includes:
 
 ### Backups and export
 
-Vault Notes has two different safety paths:
+Note Vault has two different safety paths:
 
 1. **Readable export**
 
    **Export Vault** creates a normal ZIP file with:
 
    ```text
-   Music Notes Vault Export/
+   Note Vault Export/
      Notes/
        Example Note.md
      Files/
@@ -137,7 +137,9 @@ Vault Notes has two different safety paths:
 
 2. **Restore backups**
 
-   Automatic `.vaultbackup` files are created for restoring the vault back into Vault Notes.
+   Automatic `.vaultbackup` files are created for restoring the vault back into Note Vault.
+
+   If a backup includes very large files, Note Vault keeps the `.vaultbackup` restore file and creates a matching `-large-files` sidecar folder beside it. Keep that sidecar folder with the backup file so restore can bring the large files back too.
 
    Automatic backups can run:
 
@@ -152,13 +154,13 @@ Use **Import Backup** to restore a `.vaultbackup` or compatible backup ZIP. Impo
 
 ### Updates
 
-Vault Notes checks the project's GitHub Releases when the app launches. If a newer version is available, the app can prompt the user to:
+Note Vault checks the project's GitHub Releases when the app launches. If a newer version is available, the app can prompt the user to:
 
 - Download or open the new release.
 - Skip that version.
 - Decide later.
 
-After an update, Vault Notes can show a "What's New" prompt for the installed version.
+After an update, Note Vault can show a "What's New" prompt for the installed version.
 
 ### Appearance and usability
 
@@ -173,12 +175,12 @@ After an update, Vault Notes can show a "What's New" prompt for the installed ve
 
 ## How data is stored
 
-Vault Notes stores its local SQLite database, uploaded files, settings, logs, thumbnails, and backups on the local Windows machine.
+Note Vault stores its local SQLite database, uploaded files, settings, logs, thumbnails, and backups on the local machine.
 
 The main app data folder is normally:
 
 ```text
-C:\Users\YOUR_NAME\AppData\Roaming\Vault Notes
+C:\Users\YOUR_NAME\AppData\Roaming\Note Vault
 ```
 
 Important local data:
@@ -214,13 +216,13 @@ Then launch Electron in a second terminal:
 npm start
 ```
 
-## Build a Windows installer
+## Build installers
 
 ```powershell
 npm run dist
 ```
 
-The generated installer is placed in the `release` folder.
+The generated installer is placed in the `release` folder. Windows installers are built locally; macOS builds are produced by the GitHub Actions macOS workflow.
 
 ## Built with
 
@@ -231,11 +233,11 @@ The generated installer is placed in the `release` folder.
 - SQLite via `better-sqlite3`
 - `pdf-parse` for PDF text extraction
 - `adm-zip` for backups, exports, and DOCX text extraction
-- `electron-builder` for the Windows installer
+- `electron-builder` for installers
 
 ## Requirements
 
-- Windows
+- Windows or macOS
 - Node.js LTS
 - Git
 - Visual Studio Build Tools with the **Desktop development with C++** workload
@@ -244,7 +246,6 @@ The C++ build tools are required because `better-sqlite3` includes a native depe
 
 ## Current limitations
 
-- The app is currently Windows-focused and only packages a Windows installer.
 - There is no built-in cloud sync or multi-computer live sharing.
 - Scanned image-only PDFs are not OCR-indexed yet.
 - Notes use a plain-text editor.

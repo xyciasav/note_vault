@@ -40,7 +40,7 @@
   },
   "build": {
     "appId": "com.local.vaultnotes",
-    "productName": "Vault Notes",
+    "productName": "Note Vault",
     "directories": {
       "output": "release"
     },
