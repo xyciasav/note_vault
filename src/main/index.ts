@@ -5,7 +5,12 @@ import Database from 'better-sqlite3';
 import { createHash, randomUUID } from 'crypto';
 import https from 'https';
 import AdmZip from 'adm-zip';
-import { PDFParse } from 'pdf-parse';
+import { DOMMatrix, DOMPoint, DOMRect, ImageData } from '@napi-rs/canvas';
+
+(globalThis as any).DOMMatrix ??= DOMMatrix;
+(globalThis as any).DOMPoint ??= DOMPoint;
+(globalThis as any).DOMRect ??= DOMRect;
+(globalThis as any).ImageData ??= ImageData;
 
 const isDev = process.env.NODE_ENV === 'development' || process.env.VITE_DEV_SERVER_URL;
 
@@ -308,6 +313,7 @@ async function extractText(sourcePath: string, ext: string) {
     const stat = fs.statSync(sourcePath);
     if (stat.size > 20_000_000) return '';
     if (safeExt === '.pdf') {
+      const { PDFParse } = await import('pdf-parse');
       const parser = new PDFParse({ data: fs.readFileSync(sourcePath) });
       const result = await parser.getText();
       await parser.destroy();
