@@ -50,6 +50,13 @@
     ],
     "win": {
       "target": "nsis"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity"
     }
   }
 }
