@@ -1,6 +1,9 @@
 name: Build macOS prerelease
 
 on:
+  push:
+    branches:
+      - codex/1.3-local-relationships
   workflow_dispatch:
     inputs:
       release_tag:
@@ -18,6 +21,7 @@ jobs:
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
       GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event.inputs.release_tag || 'v1.3.0-beta.1' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,4 +50,4 @@ jobs:
             release/*.zip
 
       - name: Upload macOS files to prerelease
-        run: gh release upload "${{ inputs.release_tag }}" release/*.dmg release/*.zip --repo xyciasav/note_vault --clobber
+        run: gh release upload "$RELEASE_TAG" release/*.dmg release/*.zip --repo xyciasav/note_vault --clobber
