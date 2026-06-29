@@ -5,12 +5,73 @@ import Database from 'better-sqlite3';
 import { createHash, randomUUID } from 'crypto';
 import https from 'https';
 import AdmZip from 'adm-zip';
-import { DOMMatrix, DOMPoint, DOMRect, ImageData } from '@napi-rs/canvas';
 
-(globalThis as any).DOMMatrix ??= DOMMatrix;
-(globalThis as any).DOMPoint ??= DOMPoint;
-(globalThis as any).DOMRect ??= DOMRect;
-(globalThis as any).ImageData ??= ImageData;
+class SimpleDOMMatrix {
+  a = 1;
+  b = 0;
+  c = 0;
+  d = 1;
+  e = 0;
+  f = 0;
+
+  constructor(init?: number[] | string) {
+    if (Array.isArray(init)) {
+      [this.a, this.b, this.c, this.d, this.e, this.f] = [
+        init[0] ?? 1,
+        init[1] ?? 0,
+        init[2] ?? 0,
+        init[3] ?? 1,
+        init[4] ?? 0,
+        init[5] ?? 0
+      ];
+    }
+  }
+
+  multiplySelf() {
+    return this;
+  }
+
+  preMultiplySelf() {
+    return this;
+  }
+
+  translateSelf() {
+    return this;
+  }
+
+  scaleSelf() {
+    return this;
+  }
+
+  rotateSelf() {
+    return this;
+  }
+
+  invertSelf() {
+    return this;
+  }
+}
+
+class SimpleDOMPoint {
+  constructor(public x = 0, public y = 0, public z = 0, public w = 1) {}
+}
+
+class SimpleDOMRect {
+  constructor(public x = 0, public y = 0, public width = 0, public height = 0) {}
+}
+
+class SimpleImageData {
+  data: Uint8ClampedArray;
+
+  constructor(public width: number, public height: number) {
+    this.data = new Uint8ClampedArray(width * height * 4);
+  }
+}
+
+(globalThis as any).DOMMatrix ??= SimpleDOMMatrix;
+(globalThis as any).DOMPoint ??= SimpleDOMPoint;
+(globalThis as any).DOMRect ??= SimpleDOMRect;
+(globalThis as any).ImageData ??= SimpleImageData;
 
 const isDev = process.env.NODE_ENV === 'development' || process.env.VITE_DEV_SERVER_URL;
 
