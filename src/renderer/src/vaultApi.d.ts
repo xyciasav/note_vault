@@ -23,6 +23,8 @@ export type VaultItem = {
 export type ImportPreview = {
   sourcePath: string;
   relativePath: string;
+  watchedFolderId?: string;
+  watchedFolderPath?: string;
   title: string;
   fileName: string;
   fileExt: string;
@@ -34,6 +36,22 @@ export type ImportPreview = {
   duplicateMatch?: { id: string; title: string; fileName: string } | null;
   extractedText: string;
   thumbnailData?: string | null;
+};
+
+export type WatchedFolder = {
+  id: string;
+  path: string;
+  enabled: boolean;
+  created_at: string;
+  lastScanAt?: string;
+  seenCount: number;
+};
+
+export type WatchedFolderFile = {
+  sourcePath: string;
+  relativePath: string;
+  watchedFolderId: string;
+  watchedFolderPath: string;
 };
 
 declare global {
@@ -69,6 +87,11 @@ declare global {
       chooseBackupFolder: () => Promise<{ canceled: boolean; path?: string }>;
       setBackupFrequency: (frequency: 'on-close' | 'daily' | 'weekly' | 'never') => Promise<{ backupDirectory: string; backupFrequency: string }>;
       importBackup: () => Promise<{ canceled: boolean; imported?: boolean }>;
+      listWatchedFolders: () => Promise<WatchedFolder[]>;
+      addWatchedFolder: () => Promise<{ canceled: boolean; folder?: WatchedFolder; alreadyExists?: boolean }>;
+      removeWatchedFolder: (id: string) => Promise<{ ok: boolean }>;
+      scanWatchedFolders: (args?: { markSeen?: boolean; folderId?: string }) => Promise<WatchedFolderFile[]>;
+      markWatchedFilesSeen: (files: { sourcePath: string; watchedFolderId?: string; watchedFolderPath?: string }[]) => Promise<{ ok: boolean }>;
       checkForUpdates: () => Promise<{ updateAvailable: boolean; version?: string }>;
     };
   }

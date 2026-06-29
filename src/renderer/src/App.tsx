@@ -14,14 +14,14 @@ import {
   Settings
 } from 'lucide-react';
 import './styles/app.css';
-import type { ImportPreview, VaultItem } from './vaultApi';
+import type { ImportPreview, VaultItem, WatchedFolder, WatchedFolderFile } from './vaultApi';
 
 type TypeFilter = 'all' | 'note' | 'file';
 type ItemSort = 'updated' | 'title' | 'tags';
 type AppView = 'dashboard' | 'library' | 'search' | 'settings';
 type BackupFrequency = 'on-close' | 'daily' | 'weekly' | 'never';
 type ImportFilter = 'all' | 'ready' | 'duplicates' | 'name-conflicts' | 'images' | 'pdfs';
-type SettingsTab = 'general' | 'tags' | 'logs';
+type SettingsTab = 'general' | 'watch' | 'tags' | 'logs';
 type LibraryViewMode = 'cards' | 'compact' | 'grid';
 type DetailTab = 'preview' | 'notes' | 'info';
 
@@ -174,6 +174,8 @@ export default function App() {
   const [appVersion, setAppVersion] = useState('');
   const [logText, setLogText] = useState('');
   const [logPath, setLogPath] = useState('');
+  const [watchedFolders, setWatchedFolders] = useState<WatchedFolder[]>([]);
+  const watchedAutoScanRef = useRef(false);
   const [dashboard, setDashboard] = useState<{ totalItems: number; notes: number; files: number; favorites: number; collections: number; tags: number; recentItems: VaultItem[] } | null>(null);
   const itemsListRef = useRef<HTMLDivElement | null>(null);
   const itemCardRefs = useRef(new Map<string, HTMLDivElement>());
@@ -308,7 +310,18 @@ export default function App() {
 
   useEffect(() => {
     window.vaultApi.getAppVersion().then(setAppVersion).catch(() => undefined);
+    refreshWatchedFolders().catch(err => setStatus(`Could not load watched folders: ${err.message}`));
   }, []);
+
+  useEffect(() => {
+    if (watchedAutoScanRef.current || watchedFolders.length === 0 || importDrafts.length > 0) return;
+    watchedAutoScanRef.current = true;
+
+    window.setTimeout(() => {
+      scanWatchedFolders(true).catch(err => setStatus(`Watched folder scan failed: ${err.message}`));
+    }, 1200);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchedFolders.length, importDrafts.length]);
 
   const activeCollection = useMemo(
     () => collections.find(collection => collection.id === selectedCollectionId) || null,
@@ -481,6 +494,7 @@ export default function App() {
     if (appView === 'settings') {
       refreshLogs();
       refreshTags().catch(err => setStatus(`Could not load tags: ${err.message}`));
+      refreshWatchedFolders().catch(err => setStatus(`Could not load watched folders: ${err.message}`));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appView]);
@@ -682,14 +696,7 @@ export default function App() {
     return draft.collectionNameDraft.trim();
   }
 
-  async function prepareImport(files: File[]) {
-    if (files.length === 0) return;
-
-    const fileInputs = files.map(file => ({
-      sourcePath: window.vaultApi.getPathForFile(file),
-      relativePath: (file as any).webkitRelativePath || file.name
-    })).filter(file => file.sourcePath);
-
+  async function prepareImportEntries(fileInputs: (WatchedFolderFile | { sourcePath: string; relativePath?: string })[]) {
     if (fileInputs.length === 0) {
       throw new Error('Could not read file path from Electron.');
     }
@@ -698,10 +705,13 @@ export default function App() {
     setImportProgress({ phase: 'Preparing files', current: 0, total: fileInputs.length });
     setStatus(`Preparing ${fileInputs.length} file${fileInputs.length === 1 ? '' : 's'} for review...`);
     try {
+      const previewMeta = new Map(fileInputs.map(file => [file.sourcePath, file]));
       const previews = await window.vaultApi.previewImport(fileInputs);
       setImportProgress({ phase: 'Ready for review', current: previews.length, total: fileInputs.length });
       setImportDrafts(previews.map((preview, index) => ({
         ...preview,
+        watchedFolderId: (previewMeta.get(preview.sourcePath) as WatchedFolderFile | undefined)?.watchedFolderId,
+        watchedFolderPath: (previewMeta.get(preview.sourcePath) as WatchedFolderFile | undefined)?.watchedFolderPath,
         importId: `${preview.sourcePath}-${index}`,
         selected: preview.duplicateKind !== 'same-file',
         titleDraft: preview.title,
@@ -714,6 +724,17 @@ export default function App() {
     } finally {
       setIsPreparingImport(false);
     }
+  }
+
+  async function prepareImport(files: File[]) {
+    if (files.length === 0) return;
+
+    const fileInputs = files.map(file => ({
+      sourcePath: window.vaultApi.getPathForFile(file),
+      relativePath: (file as any).webkitRelativePath || file.name
+    })).filter(file => file.sourcePath);
+
+    await prepareImportEntries(fileInputs);
   }
 
   async function uploadDraft(draft: ImportDraft, collectionIds: string[]) {
@@ -1075,6 +1096,69 @@ export default function App() {
       setStatus(`Opened logs folder: ${result.path}`);
     } catch (err: any) {
       setStatus(`Could not open logs: ${err.message}`);
+    }
+  }
+
+  async function refreshWatchedFolders() {
+    const folders = await window.vaultApi.listWatchedFolders();
+    setWatchedFolders(folders);
+  }
+
+  async function addWatchedFolder() {
+    try {
+      const result = await window.vaultApi.addWatchedFolder();
+      if (result.canceled) return;
+      await refreshWatchedFolders();
+      setSettingsTab('watch');
+      setStatus(result.alreadyExists ? 'That folder is already being watched.' : 'Watched folder added. Use Scan Now to review files.');
+    } catch (err: any) {
+      setStatus(`Could not add watched folder: ${err.message}`);
+    }
+  }
+
+  async function removeWatchedFolder(id: string) {
+    if (!confirm('Remove this watched folder? Files already imported into the vault will stay.')) return;
+    try {
+      await window.vaultApi.removeWatchedFolder(id);
+      await refreshWatchedFolders();
+      setStatus('Watched folder removed.');
+    } catch (err: any) {
+      setStatus(`Could not remove watched folder: ${err.message}`);
+    }
+  }
+
+  async function reviewWatchedFiles(files: WatchedFolderFile[], sourceLabel = 'watched folders') {
+    if (files.length === 0) {
+      setStatus(`No new files found in ${sourceLabel}.`);
+      return;
+    }
+
+    await window.vaultApi.markWatchedFilesSeen(files);
+    await refreshWatchedFolders();
+    await prepareImportEntries(files);
+    setStatus(`Review ${files.length} new file${files.length === 1 ? '' : 's'} from ${sourceLabel}.`);
+  }
+
+  async function scanWatchedFolders(auto = false, folderId?: string) {
+    try {
+      const files = await window.vaultApi.scanWatchedFolders({ markSeen: false, folderId });
+      if (files.length === 0) {
+        if (!auto) setStatus('No new files found in watched folders.');
+        return;
+      }
+
+      const shouldReview = auto
+        ? confirm(`Vault Notes found ${files.length} new file${files.length === 1 ? '' : 's'} in watched folders. Review them now?`)
+        : true;
+
+      if (!shouldReview) {
+        setStatus(`${files.length} new watched-folder file${files.length === 1 ? '' : 's'} waiting for review.`);
+        return;
+      }
+
+      await reviewWatchedFiles(files, folderId ? 'this watched folder' : 'watched folders');
+    } catch (err: any) {
+      setStatus(`Watched folder scan failed: ${err.message}`);
     }
   }
 
@@ -2301,6 +2385,7 @@ export default function App() {
           <div className="settings-tabs">
             {([
               ['general', 'General'],
+              ['watch', `Watched Folders (${watchedFolders.length})`],
               ['tags', `Tags (${settingsTagRecords.length})`],
               ['logs', 'Logs']
             ] as [SettingsTab, string][]).map(([tab, label]) => (
@@ -2376,6 +2461,42 @@ export default function App() {
             </p>
             <div className="settings-actions">
               <button onClick={checkForUpdates}>Check for Updates</button>
+            </div>
+          </section>
+
+          <section className="settings-section settings-watch-manager">
+            <h2>Watched Folders</h2>
+            <p>
+              Keep an eye on local folders without syncing to the internet. When new files appear,
+              Vault Notes can ask you to review them in the import wizard.
+            </p>
+            <div className="settings-actions">
+              <button onClick={addWatchedFolder}>
+                <FolderOpen size={16} /> Add Watched Folder
+              </button>
+              <button onClick={() => scanWatchedFolders(false)}>
+                Scan All Watched Folders
+              </button>
+            </div>
+
+            <div className="watched-folder-list">
+              {watchedFolders.length === 0 ? (
+                <div className="watched-folder-empty">
+                  No watched folders yet. Add a lyrics, downloads, samples, or project folder to start.
+                </div>
+              ) : watchedFolders.map(folder => (
+                <div key={folder.id} className="watched-folder-row">
+                  <div>
+                    <strong>{folder.path}</strong>
+                    <small>
+                      {folder.seenCount} seen file{folder.seenCount === 1 ? '' : 's'}
+                      {folder.lastScanAt ? ` · Last scan ${formatDate(folder.lastScanAt)}` : ' · Not scanned yet'}
+                    </small>
+                  </div>
+                  <button onClick={() => scanWatchedFolders(false, folder.id)}>Scan</button>
+                  <button className="danger" onClick={() => removeWatchedFolder(folder.id)}>Remove</button>
+                </div>
+              ))}
             </div>
           </section>
 

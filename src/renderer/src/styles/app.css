@@ -1139,6 +1139,8 @@ body {
 .settings-tabs button.active { background: #2563eb; border-color: #2563eb; color: #fff; }
 .settings-tab-general .settings-logs,
 .settings-tab-general .settings-tags-manager,
+.settings-tab-general .settings-watch-manager,
+.settings-tab-watch .settings-section:not(.settings-watch-manager),
 .settings-tab-tags .settings-section:not(.settings-tags-manager),
 .settings-tab-logs .settings-section:not(.settings-logs) { display: none; }
 
@@ -1154,6 +1156,7 @@ body {
 
 .settings-backup,
 .settings-logs,
+.settings-watch-manager,
 .settings-tags-manager {
   grid-column: 1 / -1;
 }
@@ -1177,6 +1180,7 @@ body {
 }
 
 .settings-logs .settings-actions,
+.settings-watch-manager .settings-actions,
 .settings-tags-manager .settings-actions {
   margin-bottom: 14px;
 }
@@ -1245,6 +1249,14 @@ body {
 .settings-control button {
   justify-self: start;
 }
+
+.watched-folder-list { display: grid; gap: 10px; margin-top: 16px; }
+.watched-folder-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 12px; border: 1px solid #e2e8f0; border-radius: 14px; background: #f8fafc; }
+.watched-folder-row strong { display: block; min-width: 0; overflow-wrap: anywhere; color: #0f172a; }
+.watched-folder-row small { display: block; margin-top: 4px; color: #64748b; font-size: 12px; }
+.watched-folder-row button { border: 1px solid #cbd5e1; border-radius: 9px; padding: 7px 10px; background: #fff; color: #1e3a8a; cursor: pointer; font-weight: 700; }
+.watched-folder-row .danger { color: #b91c1c; border-color: #fecaca; background: #fff1f2; }
+.watched-folder-empty { padding: 20px; border: 1px dashed #cbd5e1; border-radius: 14px; color: #64748b; background: #f8fafc; }
 
 @media (max-width: 780px) {
   .settings-panel { padding: 24px 18px; }
@@ -1357,6 +1369,12 @@ body {
 .theme-dark .item-card.bulk-selected .tag-row span { background: #075985 !important; color: #f0f9ff !important; }
 .theme-dark .item-card.bulk-selected { background: #172b4d !important; border-color: #38bdf8 !important; box-shadow: 0 0 0 2px rgba(56, 189, 248, .28) !important; }
 .theme-dark .tag-manager-row { background: #0b1220; border-color: #334155; }
+.theme-dark .watched-folder-row,
+.theme-dark .watched-folder-empty { background: #0b1220; border-color: #334155; color: #94a3b8; }
+.theme-dark .watched-folder-row strong { color: #e2e8f0; }
+.theme-dark .watched-folder-row small { color: #94a3b8; }
+.theme-dark .watched-folder-row button { background: #172033; color: #dbeafe; border-color: #334155; }
+.theme-dark .watched-folder-row .danger { background: #3f1d2a; color: #fecaca; border-color: #7f1d1d; }
 .theme-dark .tag-manager-name { color: #e2e8f0; }
 .theme-dark .tag-manager-count { background: #172033; color: #bfdbfe; border-color: #334155; }
 .theme-dark .tag-manager-add button,

@@ -31,5 +31,10 @@ contextBridge.exposeInMainWorld('vaultApi', {
   chooseBackupFolder: () => ipcRenderer.invoke('backup:chooseFolder'),
   setBackupFrequency: (frequency: string) => ipcRenderer.invoke('backup:setFrequency', frequency),
   importBackup: () => ipcRenderer.invoke('backup:import'),
+  listWatchedFolders: () => ipcRenderer.invoke('watched:list'),
+  addWatchedFolder: () => ipcRenderer.invoke('watched:addFolder'),
+  removeWatchedFolder: (id: string) => ipcRenderer.invoke('watched:removeFolder', id),
+  scanWatchedFolders: (args?: { markSeen?: boolean; folderId?: string }) => ipcRenderer.invoke('watched:scan', args),
+  markWatchedFilesSeen: (files: { sourcePath: string; watchedFolderId?: string; watchedFolderPath?: string }[]) => ipcRenderer.invoke('watched:markSeen', files),
   checkForUpdates: () => ipcRenderer.invoke('updates:check')
 });

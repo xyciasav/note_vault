@@ -17,9 +17,18 @@ let logsDir = '';
 let logPath = '';
 const defaultBackupsDir = () => path.join(app.getPath('userData'), 'backups');
 type BackupFrequency = 'on-close' | 'daily' | 'weekly' | 'never';
+type WatchedFolder = {
+  id: string;
+  path: string;
+  enabled: boolean;
+  seenFiles: string[];
+  created_at: string;
+  lastScanAt?: string;
+};
 type VaultSettings = {
   backupDirectory: string;
   backupFrequency: BackupFrequency;
+  watchedFolders: WatchedFolder[];
   lastAutoBackupAt?: string;
   skippedReleaseTag?: string;
   lastLaunchedVersion?: string;
@@ -44,7 +53,8 @@ function writeLog(message: string, error?: unknown) {
 function loadSettings() {
   const defaults: VaultSettings = {
     backupDirectory: defaultBackupsDir(),
-    backupFrequency: 'daily'
+    backupFrequency: 'daily',
+    watchedFolders: []
   };
 
   try {
@@ -54,6 +64,13 @@ function loadSettings() {
     vaultSettings = defaults;
   }
 
+  vaultSettings.watchedFolders = Array.isArray(vaultSettings.watchedFolders)
+    ? vaultSettings.watchedFolders.map(folder => ({
+      ...folder,
+      enabled: folder.enabled !== false,
+      seenFiles: Array.isArray(folder.seenFiles) ? folder.seenFiles : []
+    }))
+    : [];
   backupsDir = vaultSettings.backupDirectory;
   fs.mkdirSync(backupsDir, { recursive: true });
 }
@@ -328,6 +345,105 @@ function suggestImportTags(sourcePath: string, relativePath = '') {
   return tokenizeImportText(parts.join(' '));
 }
 
+function watchedFileSignature(rootPath: string, sourcePath: string) {
+  const stat = fs.statSync(sourcePath);
+  const relativePath = path.relative(rootPath, sourcePath) || path.basename(sourcePath);
+  return `${relativePath.toLowerCase()}|${stat.size}|${Math.round(stat.mtimeMs)}`;
+}
+
+function listWatchedFolderFiles(rootPath: string, limit = 500) {
+  const files: { sourcePath: string; relativePath: string; signature: string }[] = [];
+  const ignoredDirectories = new Set(['node_modules', '.git', 'dist', 'release', 'win-unpacked']);
+
+  const walk = (currentPath: string) => {
+    if (files.length >= limit) return;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(currentPath, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (files.length >= limit) return;
+      const fullPath = path.join(currentPath, entry.name);
+      if (entry.isDirectory()) {
+        if (!ignoredDirectories.has(entry.name)) walk(fullPath);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      try {
+        files.push({
+          sourcePath: fullPath,
+          relativePath: path.relative(rootPath, fullPath) || entry.name,
+          signature: watchedFileSignature(rootPath, fullPath)
+        });
+      } catch {
+        // Ignore files that disappear while scanning.
+      }
+    }
+  };
+
+  walk(rootPath);
+  return files;
+}
+
+function scanWatchedFolders(markSeen = false, folderId?: string) {
+  const foundFiles: { sourcePath: string; relativePath: string; watchedFolderId: string; watchedFolderPath: string }[] = [];
+
+  for (const folder of vaultSettings.watchedFolders) {
+    if (!folder.enabled) continue;
+    if (folderId && folder.id !== folderId) continue;
+    if (!fs.existsSync(folder.path)) continue;
+
+    const seen = new Set(folder.seenFiles || []);
+    const files = listWatchedFolderFiles(folder.path);
+    const newFiles = files.filter(file => !seen.has(file.signature));
+
+    foundFiles.push(...newFiles.map(file => ({
+      sourcePath: file.sourcePath,
+      relativePath: file.relativePath,
+      watchedFolderId: folder.id,
+      watchedFolderPath: folder.path
+    })));
+
+    if (markSeen) {
+      const allSeen = new Set([...seen, ...newFiles.map(file => file.signature)]);
+      folder.seenFiles = [...allSeen].slice(-5000);
+      folder.lastScanAt = nowIso();
+    }
+  }
+
+  if (markSeen) saveSettings();
+  return foundFiles.slice(0, 500);
+}
+
+function markWatchedFilesSeen(files: { sourcePath: string; watchedFolderId?: string; watchedFolderPath?: string }[]) {
+  let changed = false;
+  for (const file of files) {
+    const folder = vaultSettings.watchedFolders.find(candidate =>
+      candidate.id === file.watchedFolderId ||
+      (file.watchedFolderPath && candidate.path === file.watchedFolderPath) ||
+      file.sourcePath.toLowerCase().startsWith(`${candidate.path.toLowerCase()}${path.sep}`)
+    );
+    if (!folder || !fs.existsSync(file.sourcePath)) continue;
+    try {
+      const signature = watchedFileSignature(folder.path, file.sourcePath);
+      const seen = new Set(folder.seenFiles || []);
+      if (!seen.has(signature)) {
+        seen.add(signature);
+        folder.seenFiles = [...seen].slice(-5000);
+        changed = true;
+      }
+      folder.lastScanAt = nowIso();
+    } catch {
+      // Ignore files that disappear while marking.
+    }
+  }
+  if (changed) saveSettings();
+  return { ok: true };
+}
+
 function fileHash(sourcePath: string) {
   try {
     const hash = createHash('sha256');
@@ -404,6 +520,11 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '1.3.0-beta.1': [
+    'Watched Folders can monitor local folders and surface new files for review.',
+    'New watched-folder files open in the existing import review wizard before anything is added.',
+    'This is a prerelease test build and is not offered by the normal updater.'
+  ],
   '1.2.41': [
     'The Library now has Cards, Compact, and Grid view modes for the middle item pane.',
     'The item detail pane is organized into Preview, Notes, and Info tabs.',
@@ -1144,6 +1265,52 @@ ipcMain.handle('backup:setFrequency', (_event, frequency: BackupFrequency) => {
   vaultSettings.backupFrequency = frequency;
   saveSettings();
   return { backupDirectory: backupsDir, backupFrequency: frequency };
+});
+
+ipcMain.handle('watched:list', () => vaultSettings.watchedFolders.map(folder => ({
+  id: folder.id,
+  path: folder.path,
+  enabled: folder.enabled,
+  created_at: folder.created_at,
+  lastScanAt: folder.lastScanAt,
+  seenCount: folder.seenFiles?.length || 0
+})));
+
+ipcMain.handle('watched:addFolder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow!, {
+    title: 'Choose Folder to Watch',
+    properties: ['openDirectory']
+  });
+
+  if (result.canceled || !result.filePaths[0]) return { canceled: true };
+  const selectedPath = result.filePaths[0];
+  const existing = vaultSettings.watchedFolders.find(folder => folder.path.toLowerCase() === selectedPath.toLowerCase());
+  if (existing) return { canceled: false, folder: existing, alreadyExists: true };
+
+  const folder: WatchedFolder = {
+    id: randomUUID(),
+    path: selectedPath,
+    enabled: true,
+    seenFiles: [],
+    created_at: nowIso()
+  };
+  vaultSettings.watchedFolders.push(folder);
+  saveSettings();
+  return { canceled: false, folder, alreadyExists: false };
+});
+
+ipcMain.handle('watched:removeFolder', (_event, id: string) => {
+  vaultSettings.watchedFolders = vaultSettings.watchedFolders.filter(folder => folder.id !== id);
+  saveSettings();
+  return { ok: true };
+});
+
+ipcMain.handle('watched:scan', (_event, args: { markSeen?: boolean; folderId?: string } = {}) => {
+  return scanWatchedFolders(Boolean(args.markSeen), args.folderId);
+});
+
+ipcMain.handle('watched:markSeen', (_event, files: { sourcePath: string; watchedFolderId?: string; watchedFolderPath?: string }[]) => {
+  return markWatchedFilesSeen(files);
 });
 
 ipcMain.handle('updates:check', () => checkForUpdates(true));
