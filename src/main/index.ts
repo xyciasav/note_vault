@@ -292,7 +292,14 @@ function getItem(id: string) {
 
 async function extractText(sourcePath: string, ext: string) {
   const safeExt = ext.toLowerCase();
-  const searchable = ['.txt', '.md', '.csv', '.json', '.log', '.pdf', '.docx'];
+  const searchable = [
+    '.txt', '.md', '.markdown', '.html', '.htm', '.css', '.scss', '.sass',
+    '.js', '.jsx', '.ts', '.tsx', '.json', '.jsonl', '.xml', '.yml', '.yaml',
+    '.csv', '.tsv', '.log', '.ini', '.env', '.cfg', '.conf', '.toml',
+    '.py', '.rb', '.php', '.java', '.c', '.h', '.cpp', '.hpp', '.cs', '.go',
+    '.rs', '.swift', '.kt', '.kts', '.sql', '.sh', '.bat', '.ps1', '.psm1',
+    '.lua', '.r', '.pl', '.vue', '.svelte', '.astro', '.pdf', '.docx'
+  ];
   if (!searchable.includes(safeExt)) return '';
 
   try {
@@ -351,8 +358,8 @@ function watchedFileSignature(rootPath: string, sourcePath: string) {
   return `${relativePath.toLowerCase()}|${stat.size}|${Math.round(stat.mtimeMs)}`;
 }
 
-function listWatchedFolderFiles(rootPath: string, limit = 500) {
-  const files: { sourcePath: string; relativePath: string; signature: string }[] = [];
+function listWatchedFolderFiles(rootPath: string, limit = 10000) {
+  const files: { sourcePath: string; relativePath: string; signature: string; mtimeMs: number }[] = [];
   const ignoredDirectories = new Set(['node_modules', '.git', 'dist', 'release', 'win-unpacked']);
 
   const walk = (currentPath: string) => {
@@ -373,10 +380,12 @@ function listWatchedFolderFiles(rootPath: string, limit = 500) {
       }
       if (!entry.isFile()) continue;
       try {
+        const stat = fs.statSync(fullPath);
         files.push({
           sourcePath: fullPath,
           relativePath: path.relative(rootPath, fullPath) || entry.name,
-          signature: watchedFileSignature(rootPath, fullPath)
+          signature: `${(path.relative(rootPath, fullPath) || entry.name).toLowerCase()}|${stat.size}|${Math.round(stat.mtimeMs)}`,
+          mtimeMs: stat.mtimeMs
         });
       } catch {
         // Ignore files that disappear while scanning.
@@ -385,7 +394,7 @@ function listWatchedFolderFiles(rootPath: string, limit = 500) {
   };
 
   walk(rootPath);
-  return files;
+  return files.sort((left, right) => right.mtimeMs - left.mtimeMs);
 }
 
 function scanWatchedFolders(markSeen = false, folderId?: string) {

@@ -119,6 +119,7 @@ export default function App() {
   });
   const [detailTab, setDetailTab] = useState<DetailTab>('notes');
   const [isDetailFocus, setIsDetailFocus] = useState(() => localStorage.getItem('vault-notes-detail-focus') === 'true');
+  const [isListFocus, setIsListFocus] = useState(false);
 
   const [searchText, setSearchText] = useState('');
   const [searchType, setSearchType] = useState<TypeFilter>('all');
@@ -176,6 +177,7 @@ export default function App() {
   const [logPath, setLogPath] = useState('');
   const [watchedFolders, setWatchedFolders] = useState<WatchedFolder[]>([]);
   const watchedAutoScanRef = useRef(false);
+  const importDraftsRef = useRef<ImportDraft[]>([]);
   const [dashboard, setDashboard] = useState<{ totalItems: number; notes: number; files: number; favorites: number; collections: number; tags: number; recentItems: VaultItem[] } | null>(null);
   const itemsListRef = useRef<HTMLDivElement | null>(null);
   const itemCardRefs = useRef(new Map<string, HTMLDivElement>());
@@ -185,7 +187,7 @@ export default function App() {
   });
   const [listWidth, setListWidth] = useState(() => {
     const saved = Number(localStorage.getItem('vault-notes-list-width'));
-    return Number.isFinite(saved) && saved >= 250 && saved <= 650 ? saved : 370;
+    return Number.isFinite(saved) && saved >= 250 && saved <= 1100 ? saved : 370;
   });
   const [resizingPane, setResizingPane] = useState<'sidebar' | 'list' | null>(null);
   const [importProgress, setImportProgress] = useState<{ phase: string; current: number; total: number; fileName?: string } | null>(null);
@@ -309,6 +311,10 @@ export default function App() {
   }, [listWidth]);
 
   useEffect(() => {
+    importDraftsRef.current = importDrafts;
+  }, [importDrafts]);
+
+  useEffect(() => {
     window.vaultApi.getAppVersion().then(setAppVersion).catch(() => undefined);
     refreshWatchedFolders().catch(err => setStatus(`Could not load watched folders: ${err.message}`));
   }, []);
@@ -317,9 +323,11 @@ export default function App() {
     if (watchedAutoScanRef.current || watchedFolders.length === 0 || importDrafts.length > 0) return;
     watchedAutoScanRef.current = true;
 
-    window.setTimeout(() => {
+    const scanTimer = window.setTimeout(() => {
+      if (importDraftsRef.current.length > 0) return;
       scanWatchedFolders(true).catch(err => setStatus(`Watched folder scan failed: ${err.message}`));
     }, 1200);
+    return () => window.clearTimeout(scanTimer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchedFolders.length, importDrafts.length]);
 
@@ -682,6 +690,21 @@ export default function App() {
     setIsEditing(true);
   }
 
+  function focusLibraryList() {
+    setIsDetailFocus(false);
+    setIsListFocus(true);
+  }
+
+  function focusDetailPanel() {
+    setIsListFocus(false);
+    setIsDetailFocus(true);
+  }
+
+  function showSplitLibrary() {
+    setIsListFocus(false);
+    setIsDetailFocus(false);
+  }
+
   function cancelEditing() {
     if (!selected) return;
     setDraftTitle(selected.title || '');
@@ -829,6 +852,19 @@ export default function App() {
         lastItem = await uploadDraft(draft, collectionIds);
       }
 
+      const importedWatchedFiles = selectedDrafts
+        .filter(draft => draft.watchedFolderId || draft.watchedFolderPath)
+        .map(draft => ({
+          sourcePath: draft.sourcePath,
+          watchedFolderId: draft.watchedFolderId,
+          watchedFolderPath: draft.watchedFolderPath
+        }));
+
+      if (importedWatchedFiles.length > 0) {
+        await window.vaultApi.markWatchedFilesSeen(importedWatchedFiles);
+        await refreshWatchedFolders();
+      }
+
       setImportDrafts([]);
       setImportProgress(null);
       setAppView('library');
@@ -932,7 +968,10 @@ export default function App() {
     if (!resizingPane) return;
     const onMouseMove = (event: MouseEvent) => {
       if (resizingPane === 'sidebar') setSidebarWidth(Math.max(180, Math.min(460, event.clientX)));
-      else setListWidth(Math.max(250, Math.min(650, event.clientX - sidebarWidth)));
+      else {
+        const availableWidth = Math.max(320, window.innerWidth - sidebarWidth - 180);
+        setListWidth(Math.max(250, Math.min(availableWidth, event.clientX - sidebarWidth)));
+      }
     };
     const onMouseUp = () => setResizingPane(null);
     document.addEventListener('mousemove', onMouseMove);
@@ -1110,7 +1149,12 @@ export default function App() {
       if (result.canceled) return;
       await refreshWatchedFolders();
       setSettingsTab('watch');
-      setStatus(result.alreadyExists ? 'That folder is already being watched.' : 'Watched folder added. Use Scan Now to review files.');
+      if (result.folder?.id) {
+        setStatus(result.alreadyExists ? 'That folder is already watched. Scanning it now...' : 'Watched folder added. Scanning existing files now...');
+        await scanWatchedFolders(false, result.folder.id);
+      } else {
+        setStatus('Watched folder added.');
+      }
     } catch (err: any) {
       setStatus(`Could not add watched folder: ${err.message}`);
     }
@@ -1133,8 +1177,6 @@ export default function App() {
       return;
     }
 
-    await window.vaultApi.markWatchedFilesSeen(files);
-    await refreshWatchedFolders();
     await prepareImportEntries(files);
     setStatus(`Review ${files.length} new file${files.length === 1 ? '' : 's'} from ${sourceLabel}.`);
   }
@@ -1216,7 +1258,7 @@ export default function App() {
 
   return (
     <div
-      className={`app-shell ${isDarkMode ? 'theme-dark' : ''} ${appView === 'library' && isDetailFocus ? 'detail-focus' : ''}`}
+      className={`app-shell ${isDarkMode ? 'theme-dark' : ''} ${appView === 'library' && isDetailFocus ? 'detail-focus' : ''} ${appView === 'library' && isListFocus ? 'list-focus' : ''}`}
       style={{ '--sidebar-width': `${sidebarWidth}px`, '--list-width': `${listWidth}px` } as React.CSSProperties}
       onDragOver={e => {
         e.preventDefault();
@@ -1565,7 +1607,7 @@ export default function App() {
       </aside>
 
       <div className="pane-resizer pane-resizer-sidebar" onMouseDown={() => setResizingPane('sidebar')} />
-      {appView === 'library' && !isDetailFocus && <div className="pane-resizer pane-resizer-list" onMouseDown={() => setResizingPane('list')} />}
+      {appView === 'library' && !isDetailFocus && !isListFocus && <div className="pane-resizer pane-resizer-list" onMouseDown={() => setResizingPane('list')} />}
 
       {appView === 'dashboard' ? (
         <main className="dashboard-panel">
@@ -1627,8 +1669,8 @@ export default function App() {
                 <span className="list-eyebrow">{activeCollection ? 'Collection' : 'Library'}</span>
                 <h2>{activeCollection?.name || (typeFilter === 'note' ? 'Notes' : typeFilter === 'file' ? 'Files' : 'All Items')}</h2>
               </div>
-              <button type="button" onClick={() => setIsDetailFocus(true)} disabled={!selectedId}>
-                Focus
+              <button type="button" onClick={isListFocus ? showSplitLibrary : focusLibraryList}>
+                {isListFocus ? 'Show Detail' : 'Focus'}
               </button>
             </div>
 
@@ -1795,7 +1837,7 @@ export default function App() {
             </div>
           </section>}
 
-          <main className="detail-panel">
+          {!isListFocus && <main className="detail-panel">
             {!selectedId ? (
               <div className="empty-state">
                 <Archive size={52} />
@@ -1805,7 +1847,7 @@ export default function App() {
                   lyrics, and lesson files into this window.
                 </p>
                 {isDetailFocus && (
-                  <button className="empty-action" onClick={() => setIsDetailFocus(false)}>
+                  <button className="empty-action" onClick={showSplitLibrary}>
                     Show List
                   </button>
                 )}
@@ -1814,11 +1856,11 @@ export default function App() {
               <>
                 <div className="detail-toolbar">
                   {isDetailFocus ? (
-                    <button onClick={() => setIsDetailFocus(false)}>
+                    <button onClick={showSplitLibrary}>
                       Show List
                     </button>
                   ) : (
-                    <button onClick={() => setIsDetailFocus(true)}>
+                    <button onClick={focusDetailPanel}>
                       Focus
                     </button>
                   )}
@@ -2056,7 +2098,7 @@ export default function App() {
             )}
 
             {status && <div className="status-bar">{status}</div>}
-          </main>
+          </main>}
         </>
       ) : appView === 'search' ? (
         <main className="search-panel">
@@ -2467,8 +2509,9 @@ export default function App() {
           <section className="settings-section settings-watch-manager">
             <h2>Watched Folders</h2>
             <p>
-              Keep an eye on local folders without syncing to the internet. When new files appear,
-              Vault Notes can ask you to review them in the import wizard.
+              Use local folders like an import inbox. Vault Notes scans when a folder is first added,
+              then watches for new files to review. Imported files are copied into the vault, so you can
+              clean up the original folder afterward.
             </p>
             <div className="settings-actions">
               <button onClick={addWatchedFolder}>
@@ -2489,7 +2532,7 @@ export default function App() {
                   <div>
                     <strong>{folder.path}</strong>
                     <small>
-                      {folder.seenCount} seen file{folder.seenCount === 1 ? '' : 's'}
+                      {folder.seenCount} handled file{folder.seenCount === 1 ? '' : 's'}
                       {folder.lastScanAt ? ` · Last scan ${formatDate(folder.lastScanAt)}` : ' · Not scanned yet'}
                     </small>
                   </div>

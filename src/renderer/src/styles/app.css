@@ -3,6 +3,7 @@ body { margin: 0; font-family: Inter, Segoe UI, system-ui, sans-serif; backgroun
 button, input, textarea { font: inherit; }
 .app-shell { display: grid; grid-template-columns: var(--sidebar-width, 260px) var(--list-width, 370px) minmax(0, 1fr); height: 100vh; overflow: hidden; position: relative; }
 .app-shell.detail-focus { grid-template-columns: var(--sidebar-width, 260px) minmax(0, 1fr); }
+.app-shell.list-focus { grid-template-columns: var(--sidebar-width, 260px) minmax(0, 1fr); }
 .pane-resizer { position: absolute; top: 0; bottom: 0; z-index: 30; width: 9px; cursor: col-resize; }
 .pane-resizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: transparent; transition: background .15s ease, width .15s ease; }
 .pane-resizer:hover::after { width: 3px; background: #38bdf8; }
@@ -49,6 +50,7 @@ button, input, textarea { font: inherit; }
 .tags-list { overflow: auto; min-height: 120px; }
 .backup-box { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
 .list-panel { background: #111827; border-right: 1px solid #1f2937; padding: 18px; overflow: hidden; display: flex; flex-direction: column; }
+.app-shell.list-focus .list-panel { border-right: 0; }
 .list-panel-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .list-panel-header h2 { margin: 2px 0 0; color: #f8fafc; font-size: 24px; line-height: 1.05; letter-spacing: -0.03em; }
 .list-panel-header button { border: 1px solid #334155; border-radius: 10px; padding: 7px 10px; background: #172033; color: #dbeafe; cursor: pointer; font-weight: 750; }
