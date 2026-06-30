@@ -443,7 +443,8 @@ export default function App() {
     setSearchPreviewItem(item);
   }
 
-  function openSearchItemInLibrary(item: VaultItem) {
+  async function openSearchItemInLibrary(item: VaultItem) {
+    if (!(await confirmSaveDirtyChanges())) return;
     setSelectedCollectionId(null);
     setSearch('');
     setTypeFilter('all');
@@ -453,13 +454,15 @@ export default function App() {
     setAppView('library');
   }
 
-  function openDashboardLibrary(type: TypeFilter = 'all') {
+  async function openDashboardLibrary(type: TypeFilter = 'all') {
+    if (!(await confirmSaveDirtyChanges())) return;
     setSelectedCollectionId(null);
     setTypeFilter(type);
     setAppView('library');
   }
 
-  function openDashboardItem(item: VaultItem) {
+  async function openDashboardItem(item: VaultItem) {
+    if (!(await confirmSaveDirtyChanges())) return;
     setSelectedCollectionId(null);
     setTypeFilter('all');
     setItems(current => [item, ...current.filter(existing => existing.id !== item.id)]);
@@ -467,12 +470,14 @@ export default function App() {
     setAppView('library');
   }
 
-  function openSettingsTab(tab: SettingsTab) {
+  async function openSettingsTab(tab: SettingsTab) {
+    if (!(await confirmSaveDirtyChanges())) return;
     setSettingsTab(tab);
     setAppView('settings');
   }
 
-  function openSearchForTag(tag: string) {
+  async function openSearchForTag(tag: string) {
+    if (!(await confirmSaveDirtyChanges())) return;
     setSearchText('');
     setSearchTags([tag]);
     setSearchUntaggedOnly(false);
@@ -558,6 +563,7 @@ export default function App() {
   }, [selected, selectedId]);
 
   async function createNote() {
+    if (!(await confirmSaveDirtyChanges())) return;
     try {
       setIsCreating(true);
       setStatus('Creating new note...');
@@ -601,15 +607,35 @@ export default function App() {
     }
   }
 
-  async function saveSelected() {
+  function sortedValues(values: string[]) {
+    return [...values].map(value => value.trim()).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  }
+
+  function hasUnsavedChanges() {
+    if (!isEditing || !selected) return false;
+    const currentTags = sortedValues(selected.tags || []);
+    const draftTagValues = sortedValues(tagStringToArray(draftTags));
+    const currentCollections = sortedValues(selected.collection_ids || []);
+    const draftCollections = sortedValues(draftCollectionIds);
+
+    return (
+      (selected.title || '') !== (draftTitle.trim() || 'Untitled note') ||
+      (selected.body || '') !== draftBody ||
+      currentTags.join('\n') !== draftTagValues.join('\n') ||
+      currentCollections.join('\n') !== draftCollections.join('\n') ||
+      Boolean(selected.private) !== draftPrivate
+    );
+  }
+
+  async function saveSelected(options: { keepEditing?: boolean; silent?: boolean } = {}) {
     if (!selectedId) {
-      setStatus('Nothing selected to save.');
+      if (!options.silent) setStatus('Nothing selected to save.');
       return;
     }
 
     try {
       setIsSaving(true);
-      setStatus('Saving...');
+      if (!options.silent) setStatus('Saving...');
 
       const updated = await window.vaultApi.updateItem({
         id: selectedId,
@@ -640,14 +666,48 @@ export default function App() {
         minute: '2-digit'
       });
 
-      setStatus(`Saved at ${time}.`);
-      setIsEditing(false);
+      setStatus(`${options.silent ? 'Autosaved' : 'Saved'} at ${time}.`);
+      if (!options.keepEditing) setIsEditing(false);
     } catch (err: any) {
       setStatus(`Save failed: ${err.message}`);
+      throw err;
     } finally {
       setIsSaving(false);
     }
   }
+
+  async function confirmSaveDirtyChanges() {
+    if (!hasUnsavedChanges()) return true;
+    const shouldSave = confirm('You have unsaved changes. Save them before leaving this note?');
+    if (shouldSave) {
+      await saveSelected();
+      return true;
+    }
+    return confirm('Discard unsaved changes and continue?');
+  }
+
+  async function selectItem(itemId: string) {
+    if (itemId === selectedId) return;
+    if (!(await confirmSaveDirtyChanges())) return;
+    setSelectedId(itemId);
+  }
+
+  async function changeAppView(nextView: AppView) {
+    if (nextView === appView) return;
+    if (!(await confirmSaveDirtyChanges())) return;
+    setAppView(nextView);
+  }
+
+  useEffect(() => {
+    if (!isEditing || !selectedId) return;
+    const timer = window.setInterval(() => {
+      if (!isSaving && hasUnsavedChanges()) {
+        saveSelected({ keepEditing: true, silent: true }).catch(() => undefined);
+      }
+    }, 5 * 60 * 1000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditing, isSaving, selectedId, draftTitle, draftBody, draftTags, draftPrivate, draftCollectionIds]);
 
   async function toggleFavorite() {
     if (!selected) return;
@@ -703,7 +763,8 @@ export default function App() {
     setStatus(`Collection deleted: ${activeCollection.name}`);
   }
 
-  function selectCollection(collectionId: string | null) {
+  async function selectCollection(collectionId: string | null) {
+    if (!(await confirmSaveDirtyChanges())) return;
     setSelectedCollectionId(collectionId);
     setSelectedId(null);
     setIsEditing(false);
@@ -946,6 +1007,10 @@ export default function App() {
   async function onFileInput(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
+    if (!(await confirmSaveDirtyChanges())) {
+      e.target.value = '';
+      return;
+    }
 
     try {
       await prepareImport(files);
@@ -973,7 +1038,7 @@ export default function App() {
         toggleItemSelection(itemId);
         selectionAnchorIdRef.current = itemId;
       } else {
-        setSelectedId(itemId);
+        selectItem(itemId);
         selectionAnchorIdRef.current = itemId;
       }
       return;
@@ -1010,7 +1075,7 @@ export default function App() {
         ? (delta > 0 ? 0 : sortedItems.length - 1)
         : Math.max(0, Math.min(sortedItems.length - 1, currentIndex + delta));
 
-      setSelectedId(sortedItems[nextIndex].id);
+      selectItem(sortedItems[nextIndex].id).catch(() => undefined);
     }
 
     window.addEventListener('keydown', navigateItems);
@@ -1127,6 +1192,7 @@ export default function App() {
     setIsDragging(false);
 
     const files = Array.from(e.dataTransfer.files);
+    if (!(await confirmSaveDirtyChanges())) return;
 
     try {
       await prepareImport(files);
@@ -1349,6 +1415,7 @@ export default function App() {
   }
 
   async function importBackup() {
+    if (!(await confirmSaveDirtyChanges())) return;
     const ok = confirm('Importing a backup will replace the current local vault. Continue?');
 
     if (!ok) return;
@@ -1599,28 +1666,28 @@ export default function App() {
 
           <button
             className={appView === 'dashboard' ? 'active' : ''}
-            onClick={() => setAppView('dashboard')}
+            onClick={() => changeAppView('dashboard')}
           >
             <Archive size={16} /> Dashboard
           </button>
 
           <button
             className={appView === 'library' ? 'active' : ''}
-            onClick={() => setAppView('library')}
+            onClick={() => changeAppView('library')}
           >
             Library
           </button>
 
           <button
             className={appView === 'search' ? 'active' : ''}
-            onClick={() => setAppView('search')}
+            onClick={() => changeAppView('search')}
           >
             <Search size={16} /> Search
           </button>
 
           <button
             className={appView === 'settings' ? 'active' : ''}
-            onClick={() => setAppView('settings')}
+            onClick={() => changeAppView('settings')}
           >
             <Settings size={16} /> Settings
           </button>
@@ -1631,7 +1698,8 @@ export default function App() {
 
           <button
             className={typeFilter === 'all' ? 'active' : ''}
-            onClick={() => {
+            onClick={async () => {
+              if (!(await confirmSaveDirtyChanges())) return;
               setTypeFilter('all');
               setAppView('library');
             }}
@@ -1641,7 +1709,8 @@ export default function App() {
 
           <button
             className={typeFilter === 'note' ? 'active' : ''}
-            onClick={() => {
+            onClick={async () => {
+              if (!(await confirmSaveDirtyChanges())) return;
               setTypeFilter('note');
               setAppView('library');
             }}
@@ -1651,7 +1720,8 @@ export default function App() {
 
           <button
             className={typeFilter === 'file' ? 'active' : ''}
-            onClick={() => {
+            onClick={async () => {
+              if (!(await confirmSaveDirtyChanges())) return;
               setTypeFilter('file');
               setAppView('library');
             }}
@@ -1920,7 +1990,7 @@ export default function App() {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();
                       if (isSelectingItems) toggleItemSelection(item.id);
-                      else setSelectedId(item.id);
+                      else selectItem(item.id);
                     }
                   }}
                 >
