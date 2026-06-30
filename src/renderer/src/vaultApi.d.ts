@@ -54,6 +54,12 @@ export type WatchedFolderFile = {
   watchedFolderPath: string;
 };
 
+export type BackupStats = {
+  count: number;
+  totalBytes: number;
+  retentionCount: number;
+};
+
 declare global {
   interface Window {
     vaultApi: {
@@ -83,9 +89,10 @@ declare global {
       reindexFiles: () => Promise<{ indexed: number }>;
       exportBackup: () => Promise<{ canceled: boolean; path?: string }>;
       openBackupFolder: () => Promise<{ ok: boolean; path: string }>;
-      getBackupSettings: () => Promise<{ backupDirectory: string; backupFrequency: 'on-close' | 'daily' | 'weekly' | 'never' }>;
-      chooseBackupFolder: () => Promise<{ canceled: boolean; path?: string }>;
-      setBackupFrequency: (frequency: 'on-close' | 'daily' | 'weekly' | 'never') => Promise<{ backupDirectory: string; backupFrequency: string }>;
+      getBackupSettings: () => Promise<{ backupDirectory: string; backupFrequency: 'on-close' | 'daily' | 'weekly' | 'never'; backupRetentionCount: number; backupStats: BackupStats }>;
+      chooseBackupFolder: () => Promise<{ canceled: boolean; path?: string; backupDirectory?: string; backupFrequency?: string; backupRetentionCount?: number; backupStats?: BackupStats }>;
+      setBackupFrequency: (frequency: 'on-close' | 'daily' | 'weekly' | 'never') => Promise<{ backupDirectory: string; backupFrequency: string; backupRetentionCount: number; backupStats: BackupStats }>;
+      setBackupRetentionCount: (count: number) => Promise<{ backupDirectory: string; backupFrequency: string; backupRetentionCount: number; backupStats: BackupStats; deleted: number }>;
       importBackup: () => Promise<{ canceled: boolean; imported?: boolean }>;
       listWatchedFolders: () => Promise<WatchedFolder[]>;
       addWatchedFolder: () => Promise<{ canceled: boolean; folder?: WatchedFolder; alreadyExists?: boolean }>;

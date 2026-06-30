@@ -96,6 +96,7 @@ type WatchedFolder = {
 type VaultSettings = {
   backupDirectory: string;
   backupFrequency: BackupFrequency;
+  backupRetentionCount: number;
   watchedFolders: WatchedFolder[];
   lastAutoBackupAt?: string;
   skippedReleaseTag?: string;
@@ -122,6 +123,7 @@ function loadSettings() {
   const defaults: VaultSettings = {
     backupDirectory: defaultBackupsDir(),
     backupFrequency: 'daily',
+    backupRetentionCount: 10,
     watchedFolders: []
   };
 
@@ -139,6 +141,9 @@ function loadSettings() {
       seenFiles: Array.isArray(folder.seenFiles) ? folder.seenFiles : []
     }))
     : [];
+  vaultSettings.backupRetentionCount = Number.isFinite(Number(vaultSettings.backupRetentionCount))
+    ? Math.max(1, Math.min(200, Math.round(Number(vaultSettings.backupRetentionCount))))
+    : defaults.backupRetentionCount;
   backupsDir = vaultSettings.backupDirectory;
   fs.mkdirSync(backupsDir, { recursive: true });
 }
@@ -734,7 +739,7 @@ function createRestoreBackup(targetPath: string) {
   zip.addBuffer('backup.json', Buffer.from(JSON.stringify(backup, null, 2), 'utf8'));
   const externalFiles: { item_id: string; file_name: string; stored_name: string; relative_path: string; size: number }[] = [];
   const skippedFiles: { item_id: string; file_name: string; reason: string; size?: number }[] = [];
-  const sidecarDir = targetPath.replace(/\.(vaultbackup|zip)$/i, '') + '-large-files';
+  const sidecarDir = backupSidecarDir(targetPath);
   const sidecarFilesDir = path.join(sidecarDir, 'files');
 
   for (const item of items as any[]) {
@@ -786,6 +791,79 @@ function createRestoreBackup(targetPath: string) {
   zip.close();
 }
 
+function backupSidecarDir(backupPath: string) {
+  return backupPath.replace(/\.(vaultbackup|zip)$/i, '') + '-large-files';
+}
+
+function folderSize(folderPath: string) {
+  let total = 0;
+  const walk = (currentPath: string) => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(currentPath, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const fullPath = path.join(currentPath, entry.name);
+      try {
+        if (entry.isDirectory()) walk(fullPath);
+        else if (entry.isFile()) total += fs.statSync(fullPath).size;
+      } catch {
+        // Ignore files that disappear while calculating size.
+      }
+    }
+  };
+  if (fs.existsSync(folderPath)) walk(folderPath);
+  return total;
+}
+
+function listAutoBackups() {
+  if (!fs.existsSync(backupsDir)) return [];
+  return fs.readdirSync(backupsDir)
+    .filter(name => /^vault-notes-auto-.*\.vaultbackup$/i.test(name))
+    .map(name => {
+      const backupPath = path.join(backupsDir, name);
+      const sidecarPath = backupSidecarDir(backupPath);
+      const stat = fs.statSync(backupPath);
+      const sidecarSize = folderSize(sidecarPath);
+      return {
+        name,
+        path: backupPath,
+        sidecarPath,
+        createdAt: stat.mtimeMs,
+        size: stat.size + sidecarSize,
+        hasSidecar: sidecarSize > 0
+      };
+    })
+    .sort((left, right) => right.createdAt - left.createdAt);
+}
+
+function getBackupStats() {
+  const backups = listAutoBackups();
+  return {
+    count: backups.length,
+    totalBytes: backups.reduce((sum, backup) => sum + backup.size, 0),
+    retentionCount: vaultSettings.backupRetentionCount
+  };
+}
+
+function pruneOldAutoBackups() {
+  const keep = Math.max(1, Math.min(200, vaultSettings.backupRetentionCount || 10));
+  const backups = listAutoBackups();
+  const toDelete = backups.slice(keep);
+  for (const backup of toDelete) {
+    try {
+      if (fs.existsSync(backup.path)) fs.unlinkSync(backup.path);
+      if (fs.existsSync(backup.sidecarPath)) fs.rmSync(backup.sidecarPath, { recursive: true, force: true });
+      writeLog(`Pruned old automatic backup: ${backup.name}`);
+    } catch (error) {
+      writeLog(`Could not prune old automatic backup: ${backup.name}`, error);
+    }
+  }
+  return { deleted: toDelete.length, ...getBackupStats() };
+}
+
 function createAutoBackupIfNeeded() {
   if (vaultSettings.backupFrequency === 'never') return null;
 
@@ -807,6 +885,7 @@ function createAutoBackupIfNeeded() {
   }
   vaultSettings.lastAutoBackupAt = nowIso();
   saveSettings();
+  pruneOldAutoBackups();
   return targetPath;
 }
 
@@ -1557,7 +1636,9 @@ ipcMain.handle('backup:openFolder', async () => {
 
 ipcMain.handle('backup:getSettings', () => ({
   backupDirectory: backupsDir,
-  backupFrequency: vaultSettings.backupFrequency
+  backupFrequency: vaultSettings.backupFrequency,
+  backupRetentionCount: vaultSettings.backupRetentionCount,
+  backupStats: getBackupStats()
 }));
 
 ipcMain.handle('backup:chooseFolder', async () => {
@@ -1573,14 +1654,44 @@ ipcMain.handle('backup:chooseFolder', async () => {
   vaultSettings.backupDirectory = backupsDir;
   vaultSettings.lastAutoBackupAt = undefined;
   saveSettings();
-  return { canceled: false, path: backupsDir };
+  return {
+    canceled: false,
+    path: backupsDir,
+    backupDirectory: backupsDir,
+    backupFrequency: vaultSettings.backupFrequency,
+    backupRetentionCount: vaultSettings.backupRetentionCount,
+    backupStats: getBackupStats()
+  };
 });
 
 ipcMain.handle('backup:setFrequency', (_event, frequency: BackupFrequency) => {
   if (!['on-close', 'daily', 'weekly', 'never'].includes(frequency)) throw new Error('Invalid backup frequency');
   vaultSettings.backupFrequency = frequency;
   saveSettings();
-  return { backupDirectory: backupsDir, backupFrequency: frequency };
+  return {
+    backupDirectory: backupsDir,
+    backupFrequency: frequency,
+    backupRetentionCount: vaultSettings.backupRetentionCount,
+    backupStats: getBackupStats()
+  };
+});
+
+ipcMain.handle('backup:setRetentionCount', (_event, count: number) => {
+  const nextCount = Math.max(1, Math.min(200, Math.round(Number(count) || 10)));
+  vaultSettings.backupRetentionCount = nextCount;
+  saveSettings();
+  const pruneResult = pruneOldAutoBackups();
+  return {
+    backupDirectory: backupsDir,
+    backupFrequency: vaultSettings.backupFrequency,
+    backupRetentionCount: vaultSettings.backupRetentionCount,
+    backupStats: {
+      count: pruneResult.count,
+      totalBytes: pruneResult.totalBytes,
+      retentionCount: vaultSettings.backupRetentionCount
+    },
+    deleted: pruneResult.deleted
+  };
 });
 
 ipcMain.handle('watched:list', () => vaultSettings.watchedFolders.map(folder => ({
@@ -1763,7 +1874,7 @@ ipcMain.handle('backup:import', async () => {
 
   const externalManifestEntry = zip.getEntry('backup-external-files.json');
   if (externalManifestEntry) {
-    const sidecarDir = backupPath.replace(/\.(vaultbackup|zip)$/i, '') + '-large-files';
+    const sidecarDir = backupSidecarDir(backupPath);
     const externalManifest = JSON.parse(externalManifestEntry.getData().toString('utf8'));
     for (const externalFile of externalManifest.files || []) {
       const relativePath = String(externalFile.relative_path || '').replace(/^[/\\]+/, '');

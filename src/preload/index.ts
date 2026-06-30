@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('vaultApi', {
   getBackupSettings: () => ipcRenderer.invoke('backup:getSettings'),
   chooseBackupFolder: () => ipcRenderer.invoke('backup:chooseFolder'),
   setBackupFrequency: (frequency: string) => ipcRenderer.invoke('backup:setFrequency', frequency),
+  setBackupRetentionCount: (count: number) => ipcRenderer.invoke('backup:setRetentionCount', count),
   importBackup: () => ipcRenderer.invoke('backup:import'),
   listWatchedFolders: () => ipcRenderer.invoke('watched:list'),
   addWatchedFolder: () => ipcRenderer.invoke('watched:addFolder'),

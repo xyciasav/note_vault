@@ -14,7 +14,7 @@ import {
   Settings
 } from 'lucide-react';
 import './styles/app.css';
-import type { ImportPreview, VaultItem, WatchedFolder, WatchedFolderFile } from './vaultApi';
+import type { BackupStats, ImportPreview, VaultItem, WatchedFolder, WatchedFolderFile } from './vaultApi';
 
 type TypeFilter = 'all' | 'note' | 'file';
 type ItemSort = 'updated' | 'title' | 'tags';
@@ -53,7 +53,8 @@ function formatDate(value: string) {
 function formatBytes(value: number) {
   if (value < 1024) return `${value} B`;
   if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 function matchTextParts(text: string, query: string) {
@@ -178,6 +179,8 @@ export default function App() {
   const selectionAnchorIdRef = useRef<string | null>(null);
   const [backupDirectory, setBackupDirectory] = useState('');
   const [backupFrequency, setBackupFrequency] = useState<BackupFrequency>('daily');
+  const [backupRetentionCount, setBackupRetentionCount] = useState(10);
+  const [backupStats, setBackupStats] = useState<BackupStats | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('vault-notes-theme') !== 'light');
   const [appVersion, setAppVersion] = useState('');
   const [logText, setLogText] = useState('');
@@ -187,6 +190,7 @@ export default function App() {
   const importDraftsRef = useRef<ImportDraft[]>([]);
   const pendingWatchedReviewFilesRef = useRef<WatchedFolderFile[]>([]);
   const pendingWatchedScanFolderIdRef = useRef<string | undefined>(undefined);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [dashboard, setDashboard] = useState<{ totalItems: number; notes: number; files: number; favorites: number; collections: number; tags: number; recentItems: VaultItem[] } | null>(null);
   const itemsListRef = useRef<HTMLDivElement | null>(null);
   const itemCardRefs = useRef(new Map<string, HTMLDivElement>());
@@ -485,6 +489,8 @@ export default function App() {
       .then(settings => {
         setBackupDirectory(settings.backupDirectory);
         setBackupFrequency(settings.backupFrequency);
+        setBackupRetentionCount(settings.backupRetentionCount);
+        setBackupStats(settings.backupStats);
       })
       .catch(err => setStatus(`Could not load backup settings: ${err.message}`));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1116,6 +1122,7 @@ export default function App() {
   }
 
   async function onDrop(e: React.DragEvent<HTMLDivElement>) {
+    if (!Array.from(e.dataTransfer.types || []).includes('Files')) return;
     e.preventDefault();
     setIsDragging(false);
 
@@ -1146,6 +1153,8 @@ export default function App() {
     const result = await window.vaultApi.chooseBackupFolder();
     if (!result.canceled && result.path) {
       setBackupDirectory(result.path);
+      if (result.backupRetentionCount) setBackupRetentionCount(result.backupRetentionCount);
+      if (result.backupStats) setBackupStats(result.backupStats);
       setStatus(`Backup folder changed: ${result.path}`);
     }
   }
@@ -1153,7 +1162,19 @@ export default function App() {
   async function changeBackupFrequency(frequency: BackupFrequency) {
     const result = await window.vaultApi.setBackupFrequency(frequency);
     setBackupFrequency(result.backupFrequency as BackupFrequency);
+    setBackupRetentionCount(result.backupRetentionCount);
+    setBackupStats(result.backupStats);
     setStatus(`Automatic backups: ${frequency === 'never' ? 'off' : frequency}.`);
+  }
+
+  async function changeBackupRetentionCount(count: number) {
+    const result = await window.vaultApi.setBackupRetentionCount(count);
+    setBackupRetentionCount(result.backupRetentionCount);
+    setBackupStats(result.backupStats);
+    setStatus(result.deleted > 0
+      ? `Backup retention updated. Removed ${result.deleted} old automatic backup${result.deleted === 1 ? '' : 's'}.`
+      : `Backup retention updated. Keeping the newest ${result.backupRetentionCount} automatic backup${result.backupRetentionCount === 1 ? '' : 's'}.`
+    );
   }
 
   async function checkForUpdates() {
@@ -1346,10 +1367,14 @@ export default function App() {
       className={`app-shell ${isDarkMode ? 'theme-dark' : ''} ${appView === 'library' && isDetailFocus ? 'detail-focus' : ''} ${appView === 'library' && isListFocus ? 'list-focus' : ''}`}
       style={{ '--sidebar-width': `${sidebarWidth}px`, '--list-width': `${listWidth}px` } as React.CSSProperties}
       onDragOver={e => {
+        if (!Array.from(e.dataTransfer.types || []).includes('Files')) return;
         e.preventDefault();
         setIsDragging(true);
       }}
-      onDragLeave={() => setIsDragging(false)}
+      onDragLeave={e => {
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        setIsDragging(false);
+      }}
       onDrop={onDrop}
     >
       {isDragging && (
@@ -2198,11 +2223,13 @@ export default function App() {
             <button onClick={clearFullSearch}>Clear Search</button>
           </div>
 
-          <div className="full-search-box">
+          <div className="full-search-box" onMouseDown={() => searchInputRef.current?.focus()}>
             <Search size={22} />
             <input
+              ref={searchInputRef}
               value={searchText}
               onChange={e => setSearchText(e.target.value)}
+              onMouseDown={event => event.stopPropagation()}
               placeholder="Search tasks, projects, people, notes, files..."
               autoFocus
             />
@@ -2616,6 +2643,35 @@ export default function App() {
                 <option value="weekly">Once per week</option>
                 <option value="never">Off</option>
               </select>
+            </div>
+
+            <div className="settings-control">
+              <label htmlFor="backup-retention">Automatic backups to keep</label>
+              <input
+                id="backup-retention"
+                type="number"
+                min={1}
+                max={200}
+                value={backupRetentionCount}
+                onChange={event => setBackupRetentionCount(Math.max(1, Math.min(200, Number(event.target.value) || 1)))}
+                onBlur={event => changeBackupRetentionCount(Number(event.target.value))}
+                onKeyDown={event => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    changeBackupRetentionCount(Number(event.currentTarget.value));
+                  }
+                }}
+              />
+              <p className="settings-warning">
+                Heads up: backups can use a lot of disk space, especially when large files create
+                matching <code> -large-files </code> folders. Note Vault keeps the newest automatic
+                backups and removes older automatic backups beyond this number.
+              </p>
+              <small className="backup-stats">
+                {backupStats
+                  ? `${backupStats.count} automatic backup${backupStats.count === 1 ? '' : 's'} using about ${formatBytes(backupStats.totalBytes)}.`
+                  : 'Backup usage is loading…'}
+              </small>
             </div>
 
             <div className="settings-control">
