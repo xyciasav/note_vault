@@ -338,8 +338,8 @@ export default function App() {
 
     const scanTimer = window.setTimeout(() => {
       if (importDraftsRef.current.length > 0) return;
-      scanWatchedFolders(true).catch(err => setStatus(`Watched folder scan failed: ${err.message}`));
-    }, 1200);
+      scanWatchedFolders(false).catch(err => setStatus(`Watched folder scan failed: ${err.message}`));
+    }, 5000);
     return () => window.clearTimeout(scanTimer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchedFolders.length, importDrafts.length]);
@@ -2441,32 +2441,45 @@ export default function App() {
               searchResults.map(item => (
                 <button
                   key={item.id}
-                  className="search-result-card"
+                  className={`search-result-card ${searchViewMode === 'grid' ? 'search-result-image-card' : ''}`}
+                  aria-label={`Open ${item.title || item.file_name || item.type}`}
                   onClick={() => openSearchResult(item)}
                 >
-                  <div className="item-card-top">
-                    {item.thumbnail_data && <img className="item-thumbnail" src={item.thumbnail_data} alt="" />}
-                    <span className="item-title">
-                      {item.favorite ? '★ ' : ''}
-                      <HighlightedText text={item.title || 'Untitled note'} query={searchText} />
-                    </span>
-                    <span className="item-type">{item.type}</span>
-                  </div>
+                  {searchViewMode === 'grid' ? (
+                    item.thumbnail_data ? (
+                      <img className="search-result-grid-image" src={item.thumbnail_data} alt="" />
+                    ) : (
+                      <span className="search-result-grid-placeholder">
+                        {item.type === 'note' ? <FileText size={34} /> : <FolderOpen size={34} />}
+                      </span>
+                    )
+                  ) : (
+                    <>
+                      <div className="item-card-top">
+                        {item.thumbnail_data && <img className="item-thumbnail" src={item.thumbnail_data} alt="" />}
+                        <span className="item-title">
+                          {item.favorite ? '★ ' : ''}
+                          <HighlightedText text={item.title || 'Untitled note'} query={searchText} />
+                        </span>
+                        <span className="item-type">{item.type}</span>
+                      </div>
 
-                  <p className="search-snippet">
-                    {item.private ? '*****' : <>
-                      {searchSnippets.get(item.id) && <strong>{searchSnippets.get(item.id)?.label}: </strong>}
-                      <HighlightedText text={searchSnippets.get(item.id)?.text || item.body || item.file_name || 'No notes yet.'} query={searchText} />
-                    </>}
-                  </p>
+                      <p className="search-snippet">
+                        {item.private ? '*****' : <>
+                          {searchSnippets.get(item.id) && <strong>{searchSnippets.get(item.id)?.label}: </strong>}
+                          <HighlightedText text={searchSnippets.get(item.id)?.text || item.body || item.file_name || 'No notes yet.'} query={searchText} />
+                        </>}
+                      </p>
 
-                  <div className="tag-row">
-                    {(item.tags || []).slice(0, 8).map(tag => (
-                      <span key={tag}>#<HighlightedText text={tag} query={searchText} /></span>
-                    ))}
-                  </div>
+                      <div className="tag-row">
+                        {(item.tags || []).slice(0, 8).map(tag => (
+                          <span key={tag}>#<HighlightedText text={tag} query={searchText} /></span>
+                        ))}
+                      </div>
 
-                  <small>{formatDate(item.updated_at)}</small>
+                      <small>{formatDate(item.updated_at)}</small>
+                    </>
+                  )}
                 </button>
               ))
             )}
