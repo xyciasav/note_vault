@@ -169,6 +169,7 @@ export default function App() {
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const autoEditIdRef = useRef<string | null>(null);
   const editSessionTouchedRef = useRef(false);
+  const itemNavigationRef = useRef(false);
   const lastSelectedIdRef = useRef<string | null>(null);
   const [isSelectingItems, setIsSelectingItems] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
@@ -722,8 +723,15 @@ export default function App() {
 
   async function selectItem(itemId: string) {
     if (itemId === selectedId) return;
-    if (!(await confirmSaveDirtyChanges())) return;
-    setSelectedId(itemId);
+    if (itemNavigationRef.current) return;
+
+    itemNavigationRef.current = true;
+    try {
+      if (!(await confirmSaveDirtyChanges())) return;
+      setSelectedId(itemId);
+    } finally {
+      itemNavigationRef.current = false;
+    }
   }
 
   async function changeAppView(nextView: AppView) {
