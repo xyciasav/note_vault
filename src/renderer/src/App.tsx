@@ -158,6 +158,7 @@ export default function App() {
   const [showNewCollectionInput, setShowNewCollectionInput] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const autoEditIdRef = useRef<string | null>(null);
+  const editSessionTouchedRef = useRef(false);
   const lastSelectedIdRef = useRef<string | null>(null);
   const [isSelectingItems, setIsSelectingItems] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
@@ -495,6 +496,7 @@ export default function App() {
       const selectionChanged = lastSelectedIdRef.current !== selected.id;
       const shouldEdit = selected.id === autoEditIdRef.current;
       if (selectionChanged || shouldEdit) {
+        editSessionTouchedRef.current = shouldEdit;
         setDraftTitle(selected.title || '');
         setDraftBody(selected.body || '');
         setDraftTags((selected.tags || []).join(', '));
@@ -513,6 +515,7 @@ export default function App() {
       setDraftTags('');
       setDraftCollectionIds([]);
       setDraftPrivate(false);
+      editSessionTouchedRef.current = false;
       lastSelectedIdRef.current = null;
     }
   }, [selected, selectedId]);
@@ -541,6 +544,7 @@ export default function App() {
       autoEditIdRef.current = item.id;
       setSelectedId(item.id);
       setIsEditing(true);
+      editSessionTouchedRef.current = true;
       setDraftTitle(item.title || 'Untitled note');
       setDraftBody('');
       setDraftTags('');
@@ -566,8 +570,13 @@ export default function App() {
     return [...values].map(value => value.trim()).filter(Boolean).sort((a, b) => a.localeCompare(b));
   }
 
+  function markDraftTouched() {
+    if (isEditing) editSessionTouchedRef.current = true;
+  }
+
   function hasUnsavedChanges() {
     if (!isEditing || !selected) return false;
+    if (editSessionTouchedRef.current) return true;
     const currentTags = sortedValues(selected.tags || []);
     const draftTagValues = sortedValues(tagStringToArray(draftTags));
     const currentCollections = sortedValues(selected.collection_ids || []);
@@ -621,6 +630,7 @@ export default function App() {
       });
 
       setStatus(`${options.silent ? 'Autosaved' : 'Saved'} at ${time}.`);
+      editSessionTouchedRef.current = false;
       if (!options.keepEditing) setIsEditing(false);
     } catch (err: any) {
       setStatus(`Save failed: ${err.message}`);
@@ -733,6 +743,7 @@ export default function App() {
   }
 
   function beginEditing() {
+    editSessionTouchedRef.current = false;
     setIsEditing(true);
   }
 
@@ -743,6 +754,7 @@ export default function App() {
     setDraftTags((selected.tags || []).join(', '));
     setDraftCollectionIds(selected.collection_ids || []);
     setDraftPrivate(Boolean(selected.private));
+    editSessionTouchedRef.current = false;
     setIsEditing(false);
   }
 
@@ -921,14 +933,14 @@ export default function App() {
     });
   }
 
-  function selectItemWithModifiers(itemId: string, event: React.MouseEvent<HTMLDivElement>) {
+  async function selectItemWithModifiers(itemId: string, event: React.MouseEvent<HTMLDivElement>) {
     const modifier = event.ctrlKey || event.metaKey || event.shiftKey;
     if (!modifier) {
       if (isSelectingItems) {
         toggleItemSelection(itemId);
         selectionAnchorIdRef.current = itemId;
       } else {
-        setSelectedId(itemId);
+        await selectItem(itemId);
         selectionAnchorIdRef.current = itemId;
       }
       return;
@@ -1756,12 +1768,14 @@ export default function App() {
                   onMouseDown={event => {
                     if (event.ctrlKey || event.metaKey || event.shiftKey) event.preventDefault();
                   }}
-                  onClick={event => selectItemWithModifiers(item.id, event)}
+                  onClick={event => {
+                    selectItemWithModifiers(item.id, event).catch(() => undefined);
+                  }}
                   onKeyDown={event => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();
                       if (isSelectingItems) toggleItemSelection(item.id);
-                      else selectItem(item.id);
+                      else selectItem(item.id).catch(() => undefined);
                     }
                   }}
                 >
@@ -1845,7 +1859,10 @@ export default function App() {
                 <input
                   className="title-input"
                   value={draftTitle}
-                  onChange={e => setDraftTitle(e.target.value)}
+                  onChange={e => {
+                    markDraftTouched();
+                    setDraftTitle(e.target.value);
+                  }}
                   placeholder="Untitled note"
                   disabled={!isEditing}
                 />
@@ -1883,7 +1900,10 @@ export default function App() {
                     type="checkbox"
                     checked={draftPrivate}
                     disabled={!isEditing}
-                    onChange={event => setDraftPrivate(event.target.checked)}
+                    onChange={event => {
+                      markDraftTouched();
+                      setDraftPrivate(event.target.checked);
+                    }}
                   />
                   <span>Private — hide this item’s preview text in the library list</span>
                 </label>
@@ -1939,9 +1959,12 @@ export default function App() {
                   <span className="muted-label">Add collections</span>
                   {collections.map(collection => {
                     const selectedCollection = draftCollectionIds.includes(collection.id);
-                    return <button key={collection.id} type="button" className={selectedCollection ? 'active' : ''} onClick={() => setDraftCollectionIds(current => (
-                      selectedCollection ? current.filter(id => id !== collection.id) : [...current, collection.id]
-                    ))}>{collection.name}</button>;
+                    return <button key={collection.id} type="button" className={selectedCollection ? 'active' : ''} onClick={() => {
+                      markDraftTouched();
+                      setDraftCollectionIds(current => (
+                        selectedCollection ? current.filter(id => id !== collection.id) : [...current, collection.id]
+                      ));
+                    }}>{collection.name}</button>;
                   })}
                 </div>}
                 {false && isEditing && <div className="edit-tags-wrap">
@@ -1955,10 +1978,13 @@ export default function App() {
                           <input
                             type="checkbox"
                             checked={draftCollectionIds.includes(collection.id)}
-                            onChange={() => setDraftCollectionIds(current => current.includes(collection.id)
-                              ? current.filter(id => id !== collection.id)
-                              : [...current, collection.id]
-                            )}
+                            onChange={() => {
+                              markDraftTouched();
+                              setDraftCollectionIds(current => current.includes(collection.id)
+                                ? current.filter(id => id !== collection.id)
+                                : [...current, collection.id]
+                              );
+                            }}
                           />
                           <span>{collection.name}</span>
                         </label>
@@ -1978,6 +2004,7 @@ export default function App() {
                         type="button"
                         title={`Remove ${tag}`}
                         onClick={() => {
+                          markDraftTouched();
                           const nextTags = tagStringToArray(draftTags).filter(t => t !== tag);
                           setDraftTags(nextTags.join(', '));
                         }}
@@ -2004,6 +2031,7 @@ export default function App() {
                       e.preventDefault();
                       const tag = newTagText.trim();
                       if (!tag) return;
+                      markDraftTouched();
                       setDraftTags(current => [...new Set([...tagStringToArray(current), tag])].join(', '));
                       setNewTagText('');
                     }}
@@ -2011,6 +2039,7 @@ export default function App() {
                   <button type="button" disabled={!isEditing} onClick={() => {
                     const tag = newTagText.trim();
                     if (!tag) return;
+                    markDraftTouched();
                     setDraftTags(current => [...new Set([...tagStringToArray(current), tag])].join(', '));
                     setNewTagText('');
                   }}>Add Tag</button>
@@ -2020,10 +2049,13 @@ export default function App() {
                   <span className="muted-label">Saved tags</span>
                   {allTags.map(tag => {
                     const selectedTag = tagStringToArray(draftTags).includes(tag);
-                    return <button key={tag} type="button" disabled={!isEditing} className={selectedTag ? 'active' : ''} onClick={() => setDraftTags(current => {
-                      const tags = tagStringToArray(current);
-                      return (selectedTag ? tags.filter(existing => existing !== tag) : [...tags, tag]).join(', ');
-                    })}>#{tag}</button>;
+                    return <button key={tag} type="button" disabled={!isEditing} className={selectedTag ? 'active' : ''} onClick={() => {
+                      markDraftTouched();
+                      setDraftTags(current => {
+                        const tags = tagStringToArray(current);
+                        return (selectedTag ? tags.filter(existing => existing !== tag) : [...tags, tag]).join(', ');
+                      });
+                    }}>#{tag}</button>;
                   })}
                 </div>}
                 </>}
@@ -2034,7 +2066,10 @@ export default function App() {
                 <textarea
                   className="body-editor"
                   value={draftBody}
-                  onChange={e => setDraftBody(e.target.value)}
+                  onChange={e => {
+                    markDraftTouched();
+                    setDraftBody(e.target.value);
+                  }}
                   disabled={!isEditing}
                   placeholder="Type lesson notes, theory reminders, chord progressions, song ideas, practice notes, links, or anything you want searchable..."
                 />
