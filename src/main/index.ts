@@ -16,6 +16,8 @@ let backupsDir = '';
 let logsDir = '';
 let logPath = '';
 const defaultBackupsDir = () => path.join(app.getPath('userData'), 'backups');
+const maxBackupFileBytes = 25_000_000;
+const maxHashFileBytes = 250_000_000;
 type BackupFrequency = 'on-close' | 'daily' | 'weekly' | 'never';
 type VaultSettings = {
   backupDirectory: string;
@@ -330,12 +332,171 @@ function suggestImportTags(sourcePath: string, relativePath = '') {
 
 function fileHash(sourcePath: string) {
   try {
+    const stat = fs.statSync(sourcePath);
+    if (stat.size > maxHashFileBytes) return '';
     const hash = createHash('sha256');
     hash.update(fs.readFileSync(sourcePath));
     return hash.digest('hex');
   } catch {
     return '';
   }
+}
+
+const crc32Table = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let value = i;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
+    }
+    table[i] = value >>> 0;
+  }
+  return table;
+})();
+
+function updateCrc32(crc: number, buffer: Buffer) {
+  let value = crc;
+  for (const byte of buffer) {
+    value = crc32Table[(value ^ byte) & 0xff] ^ (value >>> 8);
+  }
+  return value >>> 0;
+}
+
+function crc32(buffer: Buffer) {
+  return (updateCrc32(0xffffffff, buffer) ^ 0xffffffff) >>> 0;
+}
+
+function zipDateTime(date = new Date()) {
+  return {
+    time: ((date.getHours() & 0x1f) << 11) | ((date.getMinutes() & 0x3f) << 5) | (Math.floor(date.getSeconds() / 2) & 0x1f),
+    date: (((date.getFullYear() - 1980) & 0x7f) << 9) | (((date.getMonth() + 1) & 0x0f) << 5) | (date.getDate() & 0x1f)
+  };
+}
+
+type ZipCentralEntry = {
+  name: string;
+  crc: number;
+  size: number;
+  offset: number;
+  time: number;
+  date: number;
+};
+
+class StoreZipWriter {
+  private fd: number;
+  private offset = 0;
+  private entries: ZipCentralEntry[] = [];
+
+  constructor(private targetPath: string) {
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    this.fd = fs.openSync(targetPath, 'w');
+  }
+
+  private write(buffer: Buffer) {
+    fs.writeSync(this.fd, buffer, 0, buffer.length);
+    this.offset += buffer.length;
+  }
+
+  private writeLocalHeader(name: string, crc: number, size: number, modified = new Date()) {
+    if (size > 0xffffffff) throw new Error(`Backup ZIP entry is too large: ${name}`);
+    const encodedName = Buffer.from(name.replace(/\\/g, '/'), 'utf8');
+    const { time, date } = zipDateTime(modified);
+    const header = Buffer.alloc(30);
+    header.writeUInt32LE(0x04034b50, 0);
+    header.writeUInt16LE(20, 4);
+    header.writeUInt16LE(0x0800, 6);
+    header.writeUInt16LE(0, 8);
+    header.writeUInt16LE(time, 10);
+    header.writeUInt16LE(date, 12);
+    header.writeUInt32LE(crc >>> 0, 14);
+    header.writeUInt32LE(size >>> 0, 18);
+    header.writeUInt32LE(size >>> 0, 22);
+    header.writeUInt16LE(encodedName.length, 26);
+    header.writeUInt16LE(0, 28);
+    const entryOffset = this.offset;
+    this.write(header);
+    this.write(encodedName);
+    this.entries.push({ name: encodedName.toString('utf8'), crc, size, offset: entryOffset, time, date });
+  }
+
+  addBuffer(name: string, buffer: Buffer) {
+    this.writeLocalHeader(name, crc32(buffer), buffer.length);
+    this.write(buffer);
+  }
+
+  addFile(sourcePath: string, name: string) {
+    const stat = fs.statSync(sourcePath);
+    let crc = 0xffffffff;
+    const readBuffer = Buffer.allocUnsafe(1024 * 1024);
+    const readFd = fs.openSync(sourcePath, 'r');
+    try {
+      let bytesRead = 0;
+      do {
+        bytesRead = fs.readSync(readFd, readBuffer, 0, readBuffer.length, null);
+        if (bytesRead > 0) crc = updateCrc32(crc, readBuffer.subarray(0, bytesRead));
+      } while (bytesRead > 0);
+    } finally {
+      fs.closeSync(readFd);
+    }
+
+    this.writeLocalHeader(name, (crc ^ 0xffffffff) >>> 0, stat.size, stat.mtime);
+
+    const writeBuffer = Buffer.allocUnsafe(1024 * 1024);
+    const writeFd = fs.openSync(sourcePath, 'r');
+    try {
+      let bytesRead = 0;
+      do {
+        bytesRead = fs.readSync(writeFd, writeBuffer, 0, writeBuffer.length, null);
+        if (bytesRead > 0) this.write(writeBuffer.subarray(0, bytesRead));
+      } while (bytesRead > 0);
+    } finally {
+      fs.closeSync(writeFd);
+    }
+  }
+
+  close() {
+    const centralStart = this.offset;
+    for (const entry of this.entries) {
+      const encodedName = Buffer.from(entry.name, 'utf8');
+      const header = Buffer.alloc(46);
+      header.writeUInt32LE(0x02014b50, 0);
+      header.writeUInt16LE(20, 4);
+      header.writeUInt16LE(20, 6);
+      header.writeUInt16LE(0x0800, 8);
+      header.writeUInt16LE(0, 10);
+      header.writeUInt16LE(entry.time, 12);
+      header.writeUInt16LE(entry.date, 14);
+      header.writeUInt32LE(entry.crc >>> 0, 16);
+      header.writeUInt32LE(entry.size >>> 0, 20);
+      header.writeUInt32LE(entry.size >>> 0, 24);
+      header.writeUInt16LE(encodedName.length, 28);
+      header.writeUInt16LE(0, 30);
+      header.writeUInt16LE(0, 32);
+      header.writeUInt16LE(0, 34);
+      header.writeUInt16LE(0, 36);
+      header.writeUInt32LE(0, 38);
+      header.writeUInt32LE(entry.offset >>> 0, 42);
+      this.write(header);
+      this.write(encodedName);
+    }
+
+    const centralSize = this.offset - centralStart;
+    const end = Buffer.alloc(22);
+    end.writeUInt32LE(0x06054b50, 0);
+    end.writeUInt16LE(0, 4);
+    end.writeUInt16LE(0, 6);
+    end.writeUInt16LE(this.entries.length, 8);
+    end.writeUInt16LE(this.entries.length, 10);
+    end.writeUInt32LE(centralSize >>> 0, 12);
+    end.writeUInt32LE(centralStart >>> 0, 16);
+    end.writeUInt16LE(0, 20);
+    this.write(end);
+    fs.closeSync(this.fd);
+  }
+}
+
+function backupSidecarDir(backupPath: string) {
+  return backupPath.replace(/\.(vaultbackup|zip)$/i, '') + '-large-files';
 }
 
 function createRestoreBackup(targetPath: string) {
@@ -355,16 +516,60 @@ function createRestoreBackup(targetPath: string) {
     item_collections: itemCollections
   };
 
-  const zip = new AdmZip();
-  zip.addFile('backup.json', Buffer.from(JSON.stringify(backup, null, 2), 'utf8'));
+  const zip = new StoreZipWriter(targetPath);
+  zip.addBuffer('backup.json', Buffer.from(JSON.stringify(backup, null, 2), 'utf8'));
+  const externalFiles: { item_id: string; file_name: string; stored_name: string; relative_path: string; size: number }[] = [];
+  const skippedFiles: { item_id: string; file_name: string; reason: string; size?: number }[] = [];
+  const sidecarDir = backupSidecarDir(targetPath);
+  const sidecarFilesDir = path.join(sidecarDir, 'files');
 
   for (const item of items as any[]) {
     if (!item.file_stored_name) continue;
     const filePath = path.join(filesDir, item.file_stored_name);
-    if (fs.existsSync(filePath)) zip.addLocalFile(filePath, 'files');
+    if (!fs.existsSync(filePath)) continue;
+    try {
+      const stat = fs.statSync(filePath);
+      if (stat.size > maxBackupFileBytes) {
+        fs.mkdirSync(sidecarFilesDir, { recursive: true });
+        fs.copyFileSync(filePath, path.join(sidecarFilesDir, item.file_stored_name));
+        externalFiles.push({
+          item_id: item.id,
+          file_name: item.file_name || item.file_stored_name,
+          stored_name: item.file_stored_name,
+          relative_path: `files/${item.file_stored_name}`,
+          size: stat.size
+        });
+        writeLog(`Backup stored oversized file outside ZIP: ${item.file_name || item.file_stored_name} (${stat.size} bytes)`);
+        continue;
+      }
+      zip.addFile(filePath, `files/${item.file_stored_name}`);
+    } catch (error) {
+      skippedFiles.push({
+        item_id: item.id,
+        file_name: item.file_name || item.file_stored_name,
+        reason: error instanceof Error ? error.message : String(error)
+      });
+      writeLog(`Backup skipped file: ${item.file_name || item.file_stored_name}`, error);
+    }
   }
 
-  zip.writeZip(targetPath);
+  if (externalFiles.length > 0) {
+    const manifest = {
+      note: 'Large files are stored next to this backup in the matching -large-files folder.',
+      files: externalFiles
+    };
+    zip.addBuffer('backup-external-files.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'));
+    fs.writeFileSync(path.join(sidecarDir, 'backup-external-files.json'), JSON.stringify({
+      backup: path.basename(targetPath),
+      ...manifest
+    }, null, 2), 'utf8');
+  }
+
+  if (skippedFiles.length > 0) {
+    zip.addBuffer('backup-skipped-files.json', Buffer.from(JSON.stringify(skippedFiles, null, 2), 'utf8'));
+  }
+
+  zip.close();
 }
 
 function createAutoBackupIfNeeded() {
@@ -380,7 +585,12 @@ function createAutoBackupIfNeeded() {
 
   fs.mkdirSync(backupsDir, { recursive: true });
   const targetPath = path.join(backupsDir, `vault-notes-auto-${dateStamp()}.vaultbackup`);
-  createRestoreBackup(targetPath);
+  try {
+    createRestoreBackup(targetPath);
+  } catch (error) {
+    writeLog('Automatic backup failed', error);
+    return null;
+  }
   vaultSettings.lastAutoBackupAt = nowIso();
   saveSettings();
   return targetPath;
@@ -1157,7 +1367,8 @@ ipcMain.handle('backup:import', async () => {
 
   if (result.canceled || !result.filePaths[0]) return { canceled: true };
 
-  const zip = new AdmZip(result.filePaths[0]);
+  const backupPath = result.filePaths[0];
+  const zip = new AdmZip(backupPath);
   const backupEntry = zip.getEntry('backup.json');
 
   if (!backupEntry) {
@@ -1271,6 +1482,22 @@ ipcMain.handle('backup:import', async () => {
   for (const entry of fileEntries) {
     const fileName = path.basename(entry.entryName);
     fs.writeFileSync(path.join(filesDir, fileName), entry.getData());
+  }
+
+  const externalManifestEntry = zip.getEntry('backup-external-files.json');
+  if (externalManifestEntry) {
+    const sidecarDir = backupSidecarDir(backupPath);
+    const externalManifest = JSON.parse(externalManifestEntry.getData().toString('utf8'));
+    for (const externalFile of externalManifest.files || []) {
+      const relativePath = String(externalFile.relative_path || '').replace(/^[/\\]+/, '');
+      const sourcePath = path.join(sidecarDir, relativePath);
+      const destName = path.basename(externalFile.stored_name || relativePath);
+      if (!destName || !fs.existsSync(sourcePath)) {
+        writeLog(`Backup restore missing external large file: ${externalFile.file_name || relativePath}`);
+        continue;
+      }
+      fs.copyFileSync(sourcePath, path.join(filesDir, destName));
+    }
   }
 
   cleanupUnusedTags();
