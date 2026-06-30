@@ -677,10 +677,18 @@ export default function App() {
   }
 
   async function confirmSaveDirtyChanges() {
-    if (!hasUnsavedChanges()) return true;
-    const shouldSave = confirm('You have unsaved changes. Save them before leaving this note?');
+    if (!isEditing || !selected) return true;
+    const dirty = hasUnsavedChanges();
+    const shouldSave = confirm(dirty
+      ? 'You have unsaved changes. Save them before leaving this note?'
+      : 'You are editing this note. Save before leaving?'
+    );
     if (shouldSave) {
       await saveSelected();
+      return true;
+    }
+    if (!dirty) {
+      setIsEditing(false);
       return true;
     }
     return confirm('Discard unsaved changes and continue?');
