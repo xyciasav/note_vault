@@ -157,6 +157,7 @@ export default function App() {
   const [newCollectionName, setNewCollectionName] = useState('');
   const [showNewCollectionInput, setShowNewCollectionInput] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const autoEditIdRef = useRef<string | null>(null);
   const editSessionTouchedRef = useRef(false);
   const lastSelectedIdRef = useRef<string | null>(null);
@@ -193,6 +194,7 @@ export default function App() {
     if (!selectedId) return null;
     return items.find(i => i.id === selectedId) || null;
   }, [items, selectedId]);
+  const isSelectedEditing = isEditing && Boolean(selectedId) && editingItemId === selectedId;
 
   const sortedItems = useMemo(() => [...items].sort((left, right) => {
     if (itemSort === 'title') return (left.title || '').localeCompare(right.title || '');
@@ -503,6 +505,7 @@ export default function App() {
         setDraftCollectionIds(selected.collection_ids || []);
         setDraftPrivate(Boolean(selected.private));
         setIsEditing(shouldEdit);
+        setEditingItemId(shouldEdit ? selected.id : null);
         setDetailTab(selected.type === 'file' ? 'preview' : 'notes');
         if (shouldEdit) autoEditIdRef.current = null;
       }
@@ -516,6 +519,8 @@ export default function App() {
       setDraftCollectionIds([]);
       setDraftPrivate(false);
       editSessionTouchedRef.current = false;
+      setIsEditing(false);
+      setEditingItemId(null);
       lastSelectedIdRef.current = null;
     }
   }, [selected, selectedId]);
@@ -544,6 +549,7 @@ export default function App() {
       autoEditIdRef.current = item.id;
       setSelectedId(item.id);
       setIsEditing(true);
+      setEditingItemId(item.id);
       editSessionTouchedRef.current = true;
       setDraftTitle(item.title || 'Untitled note');
       setDraftBody('');
@@ -571,11 +577,11 @@ export default function App() {
   }
 
   function markDraftTouched() {
-    if (isEditing) editSessionTouchedRef.current = true;
+    if (isSelectedEditing) editSessionTouchedRef.current = true;
   }
 
   function hasUnsavedChanges() {
-    if (!isEditing || !selected) return false;
+    if (!isSelectedEditing || !selected) return false;
     if (editSessionTouchedRef.current) return true;
     const currentTags = sortedValues(selected.tags || []);
     const draftTagValues = sortedValues(tagStringToArray(draftTags));
@@ -631,7 +637,10 @@ export default function App() {
 
       setStatus(`${options.silent ? 'Autosaved' : 'Saved'} at ${time}.`);
       editSessionTouchedRef.current = false;
-      if (!options.keepEditing) setIsEditing(false);
+      if (!options.keepEditing) {
+        setIsEditing(false);
+        setEditingItemId(null);
+      }
     } catch (err: any) {
       setStatus(`Save failed: ${err.message}`);
       throw err;
@@ -641,7 +650,7 @@ export default function App() {
   }
 
   async function confirmSaveDirtyChanges() {
-    if (!isEditing || !selected) return true;
+    if (!isSelectedEditing || !selected) return true;
     const dirty = hasUnsavedChanges();
     const shouldSave = confirm(dirty
       ? 'You have unsaved changes. Save them before leaving this note?'
@@ -653,9 +662,16 @@ export default function App() {
     }
     if (!dirty) {
       setIsEditing(false);
+      setEditingItemId(null);
       return true;
     }
-    return confirm('Discard unsaved changes and continue?');
+    const discard = confirm('Discard unsaved changes and continue?');
+    if (discard) {
+      setIsEditing(false);
+      setEditingItemId(null);
+      editSessionTouchedRef.current = false;
+    }
+    return discard;
   }
 
   async function selectItem(itemId: string) {
@@ -675,10 +691,11 @@ export default function App() {
     setSelectedCollectionId(collectionId);
     setSelectedId(null);
     setIsEditing(false);
+    setEditingItemId(null);
   }
 
   useEffect(() => {
-    if (!isEditing || !selectedId) return;
+    if (!isSelectedEditing || !selectedId) return;
     const timer = window.setInterval(() => {
       if (!isSaving && hasUnsavedChanges()) {
         saveSelected({ keepEditing: true, silent: true }).catch(() => undefined);
@@ -686,7 +703,7 @@ export default function App() {
     }, 5 * 60 * 1000);
     return () => window.clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEditing, isSaving, selectedId, draftTitle, draftBody, draftTags, draftCollectionIds]);
+  }, [isSelectedEditing, isSaving, selectedId, draftTitle, draftBody, draftTags, draftCollectionIds]);
 
   async function toggleFavorite() {
     if (!selected) return;
@@ -744,6 +761,7 @@ export default function App() {
 
   function beginEditing() {
     editSessionTouchedRef.current = false;
+    setEditingItemId(selectedId);
     setIsEditing(true);
   }
 
@@ -755,6 +773,7 @@ export default function App() {
     setDraftCollectionIds(selected.collection_ids || []);
     setDraftPrivate(Boolean(selected.private));
     editSessionTouchedRef.current = false;
+    setEditingItemId(null);
     setIsEditing(false);
   }
 
@@ -896,6 +915,7 @@ export default function App() {
         autoEditIdRef.current = lastItem.id;
         setSelectedId(lastItem.id);
         setIsEditing(true);
+        setEditingItemId(lastItem.id);
       }
       setStatus(`Imported ${selectedDrafts.length} file${selectedDrafts.length === 1 ? '' : 's'}.`);
     } catch (err: any) {
@@ -1830,11 +1850,11 @@ export default function App() {
                     </button>
                   )}
 
-                  <button onClick={beginEditing} disabled={isEditing}>
-                    {isEditing ? 'Editing' : 'Edit'}
+                  <button onClick={beginEditing} disabled={isSelectedEditing}>
+                    {isSelectedEditing ? 'Editing' : 'Edit'}
                   </button>
 
-                  {isEditing && <>
+                  {isSelectedEditing && <>
                     <button onClick={saveSelected} disabled={isSaving}>
                       <Save size={16} /> {isSaving ? 'Saving...' : 'Save'}
                     </button>
@@ -1864,7 +1884,7 @@ export default function App() {
                     setDraftTitle(e.target.value);
                   }}
                   placeholder="Untitled note"
-                  disabled={!isEditing}
+                  disabled={!isSelectedEditing}
                 />
 
                 <div className="meta-line">
@@ -1899,7 +1919,7 @@ export default function App() {
                   <input
                     type="checkbox"
                     checked={draftPrivate}
-                    disabled={!isEditing}
+                    disabled={!isSelectedEditing}
                     onChange={event => {
                       markDraftTouched();
                       setDraftPrivate(event.target.checked);
@@ -1955,7 +1975,7 @@ export default function App() {
                     .filter(collection => draftCollectionIds.includes(collection.id))
                     .map(collection => <span key={collection.id}>{collection.name}</span>)}
                 </div>
-                {isEditing && <div className="saved-tags-picker">
+                {isSelectedEditing && <div className="saved-tags-picker">
                   <span className="muted-label">Add collections</span>
                   {collections.map(collection => {
                     const selectedCollection = draftCollectionIds.includes(collection.id);
@@ -1967,7 +1987,7 @@ export default function App() {
                     }}>{collection.name}</button>;
                   })}
                 </div>}
-                {false && isEditing && <div className="edit-tags-wrap">
+                {false && isSelectedEditing && <div className="edit-tags-wrap">
                   <button type="button" className="edit-tags-button" onClick={() => setShowEditCollectionPicker(current => !current)}>
                     Edit Collections <span>▾</span>
                   </button>
@@ -2000,7 +2020,7 @@ export default function App() {
                   {tagStringToArray(draftTags).map(tag => (
                     <span className="tag-chip-editable" key={tag}>
                       #{tag}
-                      {isEditing && <button
+                      {isSelectedEditing && <button
                         type="button"
                         title={`Remove ${tag}`}
                         onClick={() => {
@@ -2023,7 +2043,7 @@ export default function App() {
                   <input
                     className="tags-input"
                     value={newTagText}
-                    disabled={!isEditing}
+                    disabled={!isSelectedEditing}
                     onChange={e => setNewTagText(e.target.value)}
                     placeholder="Add tag, like theory or scales"
                     onKeyDown={e => {
@@ -2036,7 +2056,7 @@ export default function App() {
                       setNewTagText('');
                     }}
                   />
-                  <button type="button" disabled={!isEditing} onClick={() => {
+                  <button type="button" disabled={!isSelectedEditing} onClick={() => {
                     const tag = newTagText.trim();
                     if (!tag) return;
                     markDraftTouched();
@@ -2049,7 +2069,7 @@ export default function App() {
                   <span className="muted-label">Saved tags</span>
                   {allTags.map(tag => {
                     const selectedTag = tagStringToArray(draftTags).includes(tag);
-                    return <button key={tag} type="button" disabled={!isEditing} className={selectedTag ? 'active' : ''} onClick={() => {
+                    return <button key={tag} type="button" disabled={!isSelectedEditing} className={selectedTag ? 'active' : ''} onClick={() => {
                       markDraftTouched();
                       setDraftTags(current => {
                         const tags = tagStringToArray(current);
@@ -2070,7 +2090,7 @@ export default function App() {
                     markDraftTouched();
                     setDraftBody(e.target.value);
                   }}
-                  disabled={!isEditing}
+                  disabled={!isSelectedEditing}
                   placeholder="Type lesson notes, theory reminders, chord progressions, song ideas, practice notes, links, or anything you want searchable..."
                 />
                 {selected?.type === 'file' && (
