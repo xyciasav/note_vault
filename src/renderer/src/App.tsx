@@ -25,7 +25,8 @@ type ImportFilter = 'all' | 'ready' | 'duplicates' | 'name-conflicts' | 'images'
 type SettingsTab = 'general' | 'watch' | 'tags' | 'logs';
 type SearchViewMode = 'cards' | 'grid';
 type LibraryViewMode = 'cards' | 'compact' | 'grid';
-type DetailTab = 'preview' | 'notes' | 'info';
+type DetailTab = 'preview' | 'notes' | 'relationships' | 'info';
+type NoteEditorMode = 'edit' | 'preview' | 'split';
 
 type SlashCommand = {
   id: string;
@@ -34,6 +35,8 @@ type SlashCommand = {
   insert: string;
   selectOffset?: number;
 };
+
+const maxVisibleTagSuggestions = 18;
 
 type ImportDraft = ImportPreview & {
   importId: string;
@@ -105,6 +108,86 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
   </>;
 }
 
+function renderInlineMarkdown(text: string) {
+  const nodes: React.ReactNode[] = [];
+  const pattern = /(\*\*[^*]+\*\*|_[^_]+_|`[^`]+`|\[[^\]]+\]\([^)]+\))/g;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > cursor) nodes.push(text.slice(cursor, match.index));
+    const token = match[0];
+    if (token.startsWith('**')) nodes.push(<strong key={match.index}>{token.slice(2, -2)}</strong>);
+    else if (token.startsWith('_')) nodes.push(<em key={match.index}>{token.slice(1, -1)}</em>);
+    else if (token.startsWith('`')) nodes.push(<code key={match.index}>{token.slice(1, -1)}</code>);
+    else {
+      const linkMatch = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      nodes.push(linkMatch
+        ? <a key={match.index} href={linkMatch[2]}>{linkMatch[1]}</a>
+        : token
+      );
+    }
+    cursor = match.index + token.length;
+  }
+
+  if (cursor < text.length) nodes.push(text.slice(cursor));
+  return nodes.length > 0 ? nodes : text;
+}
+
+function MarkdownPreview({ value }: { value: string }) {
+  const lines = value.split('\n');
+  const blocks: React.ReactNode[] = [];
+  let codeLines: string[] = [];
+  let inCode = false;
+
+  lines.forEach((line, index) => {
+    if (line.trim().startsWith('```')) {
+      if (inCode) {
+        blocks.push(<pre key={`code-${index}`}><code>{codeLines.join('\n')}</code></pre>);
+        codeLines = [];
+      }
+      inCode = !inCode;
+      return;
+    }
+
+    if (inCode) {
+      codeLines.push(line);
+      return;
+    }
+
+    if (!line.trim()) {
+      blocks.push(<div key={index} className="markdown-spacer" />);
+    } else if (line.startsWith('# ')) {
+      blocks.push(<h1 key={index}>{renderInlineMarkdown(line.slice(2))}</h1>);
+    } else if (line.startsWith('## ')) {
+      blocks.push(<h2 key={index}>{renderInlineMarkdown(line.slice(3))}</h2>);
+    } else if (line.startsWith('### ')) {
+      blocks.push(<h3 key={index}>{renderInlineMarkdown(line.slice(4))}</h3>);
+    } else if (line.trim() === '---') {
+      blocks.push(<hr key={index} />);
+    } else if (line.startsWith('> ')) {
+      blocks.push(<blockquote key={index}>{renderInlineMarkdown(line.slice(2))}</blockquote>);
+    } else if (/^- \[[ xX]\] /.test(line)) {
+      blocks.push(
+        <label key={index} className="markdown-task">
+          <input type="checkbox" checked={line.slice(3, 4).toLowerCase() === 'x'} readOnly />
+          <span>{renderInlineMarkdown(line.slice(6))}</span>
+        </label>
+      );
+    } else if (line.startsWith('- ')) {
+      blocks.push(<p key={index} className="markdown-list-item">• {renderInlineMarkdown(line.slice(2))}</p>);
+    } else {
+      blocks.push(<p key={index}>{renderInlineMarkdown(line)}</p>);
+    }
+  });
+
+  if (inCode && codeLines.length > 0) {
+    blocks.push(<pre key="code-open"><code>{codeLines.join('\n')}</code></pre>);
+  }
+
+  return <div className="markdown-preview">{blocks.length > 0 ? blocks : <p className="muted-label">Nothing to preview yet.</p>}</div>;
+}
+
 function duplicateImportLabel(draft: ImportDraft) {
   if (draft.duplicateKind === 'same-file') return 'Duplicate file';
   if (draft.duplicateKind === 'same-name') return 'Name already exists';
@@ -140,6 +223,7 @@ export default function App() {
     return saved === 'compact' || saved === 'grid' || saved === 'cards' ? saved : 'cards';
   });
   const [detailTab, setDetailTab] = useState<DetailTab>('notes');
+  const [noteEditorMode, setNoteEditorMode] = useState<NoteEditorMode>('edit');
   const [isDetailFocus, setIsDetailFocus] = useState(() => localStorage.getItem('vault-notes-detail-focus') === 'true');
   const [isListFocus, setIsListFocus] = useState(false);
 
@@ -1822,7 +1906,7 @@ export default function App() {
                           : draft.suggestedTags.filter(tag => allTags.some(existing => existing.toLowerCase() === tag.toLowerCase()))
                         ),
                         ...allTags
-                      ])].slice(0, 18).map(tag => (
+                      ])].slice(0, maxVisibleTagSuggestions).map(tag => (
                         <button
                           key={tag}
                           type="button"
@@ -1833,6 +1917,9 @@ export default function App() {
                         </button>
                       ))}
                     </div>
+                    {allTags.length + draft.suggestedTags.length > maxVisibleTagSuggestions && (
+                      <small className="muted-label">Showing top {maxVisibleTagSuggestions} tag options.</small>
+                    )}
                   </div>
 
                   {(draft.extractedText || draft.thumbnailData) && (
@@ -2333,6 +2420,7 @@ export default function App() {
                   {([
                     ['preview', selected?.type === 'file' ? 'Preview' : 'Overview'],
                     ['notes', 'Notes'],
+                    ['relationships', `Relationships${relationships.length ? ` (${relationships.length})` : ''}`],
                     ['info', 'Info']
                   ] as [DetailTab, string][]).map(([tab, label]) => (
                     <button
@@ -2447,6 +2535,7 @@ export default function App() {
                 </div>}
                 <div className="muted-label">An item can belong to more than one project.</div>
 
+                {false && <>
                 <label className="field-label">Relationships</label>
                 <div className="relationships-panel">
                   {relationships.length === 0 ? (
@@ -2488,6 +2577,8 @@ export default function App() {
                     </div>
                   )}
                 </div>
+
+                </>}
 
                 <label className="field-label">Tags</label>
 
@@ -2542,7 +2633,10 @@ export default function App() {
 
                 {allTags.length > 0 && <div className="saved-tags-picker">
                   <span className="muted-label">Saved tags</span>
-                  {allTags.map(tag => {
+                  {[...new Set([
+                    ...tagStringToArray(draftTags),
+                    ...allTags.filter(tag => !tagStringToArray(draftTags).includes(tag)).slice(0, maxVisibleTagSuggestions)
+                  ])].map(tag => {
                     const selectedTag = tagStringToArray(draftTags).includes(tag);
                     return <button key={tag} type="button" disabled={!isSelectedEditing} className={selectedTag ? 'active' : ''} onClick={() => {
                       markDraftTouched();
@@ -2552,7 +2646,64 @@ export default function App() {
                       });
                     }}>#{tag}</button>;
                   })}
+                  {allTags.length > maxVisibleTagSuggestions && (
+                    <span className="muted-label">Showing top {maxVisibleTagSuggestions}. Manage tags in Settings.</span>
+                  )}
                 </div>}
+                </>}
+
+                {detailTab === 'relationships' && <>
+                <div className="relationships-header">
+                  <div>
+                    <h3>Related items</h3>
+                    <p>Connect notes, files, references, drafts, assets, or project material inside the local vault.</p>
+                  </div>
+                </div>
+                <div className="relationships-panel">
+                  {relationships.length === 0 ? (
+                    <div className="detail-preview-card">
+                      <FolderOpen size={34} />
+                      <h3>No relationships yet</h3>
+                      <p>Click Edit, then search for another vault item to connect it here.</p>
+                    </div>
+                  ) : relationships.map(relationship => (
+                    <div className="relationship-row" key={relationship.item.id}>
+                      <button type="button" onClick={() => {
+                        setSelectedId(relationship.item.id);
+                        setDetailTab('relationships');
+                      }}>
+                        <span>{relationship.item.title || relationship.item.file_name || 'Untitled item'}</span>
+                        <small>{relationship.item.type}{relationship.item.collections?.length ? ` · ${relationship.item.collections.map(collection => collection.name).join(', ')}` : ''}</small>
+                      </button>
+                      {isSelectedEditing && (
+                        <button type="button" className="relationship-remove" onClick={() => removeRelationship(relationship.item.id)}>
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  ))}
+
+                  {isSelectedEditing && (
+                    <div className="relationship-add">
+                      <label className="field-label">Add relationship</label>
+                      <input
+                        value={relatedItemSearch}
+                        onChange={event => setRelatedItemSearch(event.target.value)}
+                        placeholder="Search vault items to relate..."
+                      />
+                      <div className="relationship-candidates">
+                        {relationshipCandidates.length === 0 ? (
+                          <span className="muted-label">No available items match.</span>
+                        ) : relationshipCandidates.map(item => (
+                          <button key={item.id} type="button" onClick={() => addRelationship(item.id)}>
+                            <span>{item.title || item.file_name || 'Untitled item'}</span>
+                            <small>{item.type}{item.tags?.length ? ` · ${item.tags.slice(0, 3).map(tag => `#${tag}`).join(' ')}` : ''}</small>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 </>}
 
                 {detailTab === 'notes' && <>
@@ -2565,9 +2716,25 @@ export default function App() {
                   <button type="button" disabled={!isSelectedEditing} onClick={() => insertBlock('- [ ] Task', 6)}>Todo</button>
                   <button type="button" disabled={!isSelectedEditing} onClick={() => insertBlock('```\ncode\n```', 4)}>Code</button>
                   <button type="button" disabled={!isSelectedEditing} onClick={() => insertBlock('---')}>Divider</button>
+                  <span className="editor-mode-toggle">
+                    {([
+                      ['edit', 'Edit'],
+                      ['preview', 'Preview'],
+                      ['split', 'Split']
+                    ] as [NoteEditorMode, string][]).map(([mode, label]) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        className={noteEditorMode === mode ? 'active' : ''}
+                        onClick={() => setNoteEditorMode(mode)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </span>
                 </div>
 
-                <div className="rich-editor-wrap">
+                <div className={`rich-editor-wrap rich-editor-${noteEditorMode}`}>
                   {isSelectedEditing && slashQuery && (
                     <div className="slash-command-menu">
                       {slashCommands
@@ -2585,21 +2752,27 @@ export default function App() {
                     </div>
                   )}
 
-                <textarea
-                  ref={noteEditorRef}
-                  className="body-editor"
-                  value={draftBody}
-                  onChange={e => {
-                    markDraftTouched();
-                    setDraftBody(e.target.value);
-                    updateSlashQuery(e.target.value, e.target.selectionStart);
-                  }}
-                  onKeyDown={handleNoteKeyDown}
-                  onClick={event => updateSlashQuery(draftBody, event.currentTarget.selectionStart)}
-                  onKeyUp={event => updateSlashQuery(draftBody, event.currentTarget.selectionStart)}
-                  disabled={!isSelectedEditing}
-                  placeholder="Type notes, markdown, code blocks, links, reminders, or try /h1, /todo, /code, /divider..."
-                />
+                  {noteEditorMode !== 'preview' && (
+                    <textarea
+                      ref={noteEditorRef}
+                      className="body-editor"
+                      value={draftBody}
+                      onChange={e => {
+                        markDraftTouched();
+                        setDraftBody(e.target.value);
+                        updateSlashQuery(e.target.value, e.target.selectionStart);
+                      }}
+                      onKeyDown={handleNoteKeyDown}
+                      onClick={event => updateSlashQuery(draftBody, event.currentTarget.selectionStart)}
+                      onKeyUp={event => updateSlashQuery(draftBody, event.currentTarget.selectionStart)}
+                      disabled={!isSelectedEditing}
+                      placeholder="Type notes, markdown, code blocks, links, reminders, or try /h1, /todo, /code, /divider..."
+                    />
+                  )}
+
+                  {noteEditorMode !== 'edit' && (
+                    <MarkdownPreview value={draftBody} />
+                  )}
                 </div>
                 {selected?.type === 'file' && (
                   <p className="muted-label">
