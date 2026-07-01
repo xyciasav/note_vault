@@ -955,6 +955,12 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '1.3.0': [
+    'Watched Folders can monitor local folders and surface new files for review.',
+    'Relationships can connect notes, files, collections, and related vault items.',
+    'The notes editor now includes richer Markdown preview and split editing modes.',
+    'Import review, tags, collections, backups, search, thumbnails, and the dashboard have all been expanded for larger vaults.'
+  ],
   '1.3.0-beta.1': [
     'Watched Folders can monitor local folders and surface new files for review.',
     'New watched-folder files open in the existing import review wizard before anything is added.',
