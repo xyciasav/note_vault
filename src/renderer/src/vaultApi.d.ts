@@ -20,6 +20,14 @@ export type VaultItem = {
   file_path?: string | null;
 };
 
+export type VaultRelationship = {
+  source_item_id: string;
+  target_item_id: string;
+  note: string;
+  created_at: string;
+  item: VaultItem;
+};
+
 export type ImportPreview = {
   sourcePath: string;
   relativePath: string;
@@ -73,9 +81,12 @@ declare global {
       createTag: (name: string) => Promise<{ id: string; name: string }>;
       renameTag: (oldName: string, newName: string) => Promise<{ ok: boolean }>;
       deleteTag: (name: string) => Promise<{ ok: boolean }>;
-      listCollections: () => Promise<{ id: string; name: string; created_at: string }[]>;
+      listCollections: () => Promise<{ id: string; name: string; created_at: string; count?: number }[]>;
       createCollection: (name: string) => Promise<{ id: string; name: string; created_at: string }>;
       deleteCollection: (id: string) => Promise<{ ok: boolean }>;
+      listRelationships: (itemId: string) => Promise<VaultRelationship[]>;
+      addRelationship: (args: { itemId: string; relatedItemId: string; note?: string }) => Promise<VaultRelationship[]>;
+      removeRelationship: (args: { itemId: string; relatedItemId: string }) => Promise<VaultRelationship[]>;
       createNote: (args: { title: string; body?: string; tags?: string[] | string; collectionIds?: string[] }) => Promise<VaultItem>;
       updateItem: (args: { id: string; title?: string; body?: string; tags?: string[] | string; favorite?: boolean; private?: boolean; collectionIds?: string[] }) => Promise<VaultItem>;
       deleteItem: (id: string) => Promise<{ ok: boolean }>;
@@ -89,10 +100,11 @@ declare global {
       reindexFiles: () => Promise<{ indexed: number }>;
       exportBackup: () => Promise<{ canceled: boolean; path?: string }>;
       openBackupFolder: () => Promise<{ ok: boolean; path: string }>;
-      getBackupSettings: () => Promise<{ backupDirectory: string; backupFrequency: 'on-close' | 'daily' | 'weekly' | 'never'; backupRetentionCount: number; backupStats: BackupStats }>;
-      chooseBackupFolder: () => Promise<{ canceled: boolean; path?: string; backupDirectory?: string; backupFrequency?: string; backupRetentionCount?: number; backupStats?: BackupStats }>;
-      setBackupFrequency: (frequency: 'on-close' | 'daily' | 'weekly' | 'never') => Promise<{ backupDirectory: string; backupFrequency: string; backupRetentionCount: number; backupStats: BackupStats }>;
-      setBackupRetentionCount: (count: number) => Promise<{ backupDirectory: string; backupFrequency: string; backupRetentionCount: number; backupStats: BackupStats; deleted: number }>;
+      getBackupSettings: () => Promise<{ backupDirectory: string; backupFrequency: 'on-close' | 'daily' | 'weekly' | 'never'; backupRetentionCount: number; allowNewImportTagSuggestions: boolean; backupStats: BackupStats }>;
+      chooseBackupFolder: () => Promise<{ canceled: boolean; path?: string; backupDirectory?: string; backupFrequency?: string; backupRetentionCount?: number; allowNewImportTagSuggestions?: boolean; backupStats?: BackupStats }>;
+      setBackupFrequency: (frequency: 'on-close' | 'daily' | 'weekly' | 'never') => Promise<{ backupDirectory: string; backupFrequency: string; backupRetentionCount: number; allowNewImportTagSuggestions: boolean; backupStats: BackupStats }>;
+      setBackupRetentionCount: (count: number) => Promise<{ backupDirectory: string; backupFrequency: string; backupRetentionCount: number; allowNewImportTagSuggestions: boolean; backupStats: BackupStats; deleted: number }>;
+      setImportTagSuggestions: (allowNewTags: boolean) => Promise<{ backupDirectory: string; backupFrequency: string; backupRetentionCount: number; allowNewImportTagSuggestions: boolean; backupStats: BackupStats }>;
       importBackup: () => Promise<{ canceled: boolean; imported?: boolean }>;
       listWatchedFolders: () => Promise<WatchedFolder[]>;
       addWatchedFolder: () => Promise<{ canceled: boolean; folder?: WatchedFolder; alreadyExists?: boolean }>;

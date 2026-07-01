@@ -97,6 +97,7 @@ type VaultSettings = {
   backupDirectory: string;
   backupFrequency: BackupFrequency;
   backupRetentionCount: number;
+  allowNewImportTagSuggestions: boolean;
   watchedFolders: WatchedFolder[];
   lastAutoBackupAt?: string;
   skippedReleaseTag?: string;
@@ -124,6 +125,7 @@ function loadSettings() {
     backupDirectory: defaultBackupsDir(),
     backupFrequency: 'daily',
     backupRetentionCount: 10,
+    allowNewImportTagSuggestions: true,
     watchedFolders: []
   };
 
@@ -144,6 +146,7 @@ function loadSettings() {
   vaultSettings.backupRetentionCount = Number.isFinite(Number(vaultSettings.backupRetentionCount))
     ? Math.max(1, Math.min(200, Math.round(Number(vaultSettings.backupRetentionCount))))
     : defaults.backupRetentionCount;
+  vaultSettings.allowNewImportTagSuggestions = vaultSettings.allowNewImportTagSuggestions !== false;
   backupsDir = vaultSettings.backupDirectory;
   fs.mkdirSync(backupsDir, { recursive: true });
 }
@@ -210,6 +213,17 @@ function initDb() {
       PRIMARY KEY (item_id, collection_id),
       FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
       FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS item_relationships (
+      source_item_id TEXT NOT NULL,
+      target_item_id TEXT NOT NULL,
+      note TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (source_item_id, target_item_id),
+      FOREIGN KEY (source_item_id) REFERENCES items(id) ON DELETE CASCADE,
+      FOREIGN KEY (target_item_id) REFERENCES items(id) ON DELETE CASCADE,
+      CHECK (source_item_id <> target_item_id)
     );
   `);
 
@@ -361,6 +375,38 @@ function rowToItem(row: any) {
 function getItem(id: string) {
   const row = db.prepare('SELECT * FROM items WHERE id = ?').get(id);
   return row ? rowToItem(row) : null;
+}
+
+function relationshipPair(leftId: string, rightId: string) {
+  if (leftId === rightId) throw new Error('Choose a different item to relate.');
+  return [leftId, rightId].sort((left, right) => left.localeCompare(right));
+}
+
+function listRelationshipsForItem(itemId: string) {
+  const rows = db.prepare(`
+    SELECT
+      relationships.source_item_id,
+      relationships.target_item_id,
+      relationships.note,
+      relationships.created_at,
+      related.*
+    FROM item_relationships relationships
+    JOIN items related
+      ON related.id = CASE
+        WHEN relationships.source_item_id = ? THEN relationships.target_item_id
+        ELSE relationships.source_item_id
+      END
+    WHERE relationships.source_item_id = ? OR relationships.target_item_id = ?
+    ORDER BY related.title COLLATE NOCASE
+  `).all(itemId, itemId, itemId) as any[];
+
+  return rows.map(row => ({
+    source_item_id: row.source_item_id,
+    target_item_id: row.target_item_id,
+    note: row.note || '',
+    created_at: row.created_at,
+    item: rowToItem(row)
+  }));
 }
 
 async function extractText(sourcePath: string, ext: string) {
@@ -724,6 +770,7 @@ function createRestoreBackup(targetPath: string) {
   const itemTags = db.prepare('SELECT * FROM item_tags').all();
   const collections = db.prepare('SELECT * FROM collections ORDER BY name').all();
   const itemCollections = db.prepare('SELECT * FROM item_collections').all();
+  const itemRelationships = db.prepare('SELECT * FROM item_relationships').all();
   const backup = {
     app: 'Note Vault',
     version: 1,
@@ -732,7 +779,8 @@ function createRestoreBackup(targetPath: string) {
     tags,
     item_tags: itemTags,
     collections,
-    item_collections: itemCollections
+    item_collections: itemCollections,
+    item_relationships: itemRelationships
   };
 
   const zip = new StoreZipWriter(targetPath);
@@ -1377,7 +1425,13 @@ ipcMain.handle('tags:delete', (_event, name: string) => {
 });
 
 ipcMain.handle('collections:list', () => {
-  return db.prepare('SELECT * FROM collections ORDER BY name').all();
+  return db.prepare(`
+    SELECT collections.*, COUNT(item_collections.item_id) AS count
+    FROM collections
+    LEFT JOIN item_collections ON item_collections.collection_id = collections.id
+    GROUP BY collections.id, collections.name, collections.created_at
+    ORDER BY collections.name COLLATE NOCASE
+  `).all();
 });
 
 ipcMain.handle('collections:create', (_event, name: string) => {
@@ -1436,6 +1490,7 @@ ipcMain.handle('items:delete', (_event, id: string) => {
     const target = path.join(filesDir, item.file_stored_name);
     if (fs.existsSync(target)) fs.unlinkSync(target);
   }
+  db.prepare('DELETE FROM item_relationships WHERE source_item_id = ? OR target_item_id = ?').run(id, id);
   db.prepare('DELETE FROM items WHERE id = ?').run(id);
   cleanupUnusedTags();
   return { ok: true };
@@ -1443,6 +1498,7 @@ ipcMain.handle('items:delete', (_event, id: string) => {
 
 ipcMain.handle('items:deleteMany', (_event, ids: string[]) => {
   const deleteItem = db.prepare('DELETE FROM items WHERE id = ?');
+  const removeRelationships = db.prepare('DELETE FROM item_relationships WHERE source_item_id = ? OR target_item_id = ?');
   const removeLinks = db.prepare('DELETE FROM item_collections WHERE item_id = ?');
   const removeTags = db.prepare('DELETE FROM item_tags WHERE item_id = ?');
 
@@ -1454,6 +1510,7 @@ ipcMain.handle('items:deleteMany', (_event, ids: string[]) => {
         const target = path.join(filesDir, item.file_stored_name);
         if (fs.existsSync(target)) fs.unlinkSync(target);
       }
+      removeRelationships.run(id, id);
       removeLinks.run(id);
       removeTags.run(id);
       deleteItem.run(id);
@@ -1499,6 +1556,31 @@ ipcMain.handle('items:addCollection', (_event, ids: string[], collectionId: stri
     updated += 1;
   }
   return { updated };
+});
+
+ipcMain.handle('relationships:list', (_event, itemId: string) => {
+  if (!itemId) return [];
+  return listRelationshipsForItem(itemId);
+});
+
+ipcMain.handle('relationships:add', (_event, args: { itemId: string; relatedItemId: string; note?: string }) => {
+  const [sourceItemId, targetItemId] = relationshipPair(args.itemId, args.relatedItemId);
+  const source = getItem(sourceItemId);
+  const target = getItem(targetItemId);
+  if (!source || !target) throw new Error('Both related items must exist.');
+
+  db.prepare(`
+    INSERT OR IGNORE INTO item_relationships (source_item_id, target_item_id, note, created_at)
+    VALUES (?, ?, ?, ?)
+  `).run(sourceItemId, targetItemId, args.note || '', nowIso());
+
+  return listRelationshipsForItem(args.itemId);
+});
+
+ipcMain.handle('relationships:remove', (_event, args: { itemId: string; relatedItemId: string }) => {
+  const [sourceItemId, targetItemId] = relationshipPair(args.itemId, args.relatedItemId);
+  db.prepare('DELETE FROM item_relationships WHERE source_item_id = ? AND target_item_id = ?').run(sourceItemId, targetItemId);
+  return listRelationshipsForItem(args.itemId);
 });
 
 ipcMain.handle('items:previewImport', async (_event, files: { sourcePath: string; relativePath?: string }[]) => {
@@ -1638,6 +1720,7 @@ ipcMain.handle('backup:getSettings', () => ({
   backupDirectory: backupsDir,
   backupFrequency: vaultSettings.backupFrequency,
   backupRetentionCount: vaultSettings.backupRetentionCount,
+  allowNewImportTagSuggestions: vaultSettings.allowNewImportTagSuggestions,
   backupStats: getBackupStats()
 }));
 
@@ -1660,6 +1743,7 @@ ipcMain.handle('backup:chooseFolder', async () => {
     backupDirectory: backupsDir,
     backupFrequency: vaultSettings.backupFrequency,
     backupRetentionCount: vaultSettings.backupRetentionCount,
+    allowNewImportTagSuggestions: vaultSettings.allowNewImportTagSuggestions,
     backupStats: getBackupStats()
   };
 });
@@ -1672,6 +1756,7 @@ ipcMain.handle('backup:setFrequency', (_event, frequency: BackupFrequency) => {
     backupDirectory: backupsDir,
     backupFrequency: frequency,
     backupRetentionCount: vaultSettings.backupRetentionCount,
+    allowNewImportTagSuggestions: vaultSettings.allowNewImportTagSuggestions,
     backupStats: getBackupStats()
   };
 });
@@ -1685,12 +1770,25 @@ ipcMain.handle('backup:setRetentionCount', (_event, count: number) => {
     backupDirectory: backupsDir,
     backupFrequency: vaultSettings.backupFrequency,
     backupRetentionCount: vaultSettings.backupRetentionCount,
+    allowNewImportTagSuggestions: vaultSettings.allowNewImportTagSuggestions,
     backupStats: {
       count: pruneResult.count,
       totalBytes: pruneResult.totalBytes,
       retentionCount: vaultSettings.backupRetentionCount
     },
     deleted: pruneResult.deleted
+  };
+});
+
+ipcMain.handle('settings:setImportTagSuggestions', (_event, allowNewTags: boolean) => {
+  vaultSettings.allowNewImportTagSuggestions = Boolean(allowNewTags);
+  saveSettings();
+  return {
+    backupDirectory: backupsDir,
+    backupFrequency: vaultSettings.backupFrequency,
+    backupRetentionCount: vaultSettings.backupRetentionCount,
+    allowNewImportTagSuggestions: vaultSettings.allowNewImportTagSuggestions,
+    backupStats: getBackupStats()
   };
 });
 
@@ -1770,6 +1868,7 @@ ipcMain.handle('backup:import', async () => {
   }
 
   const trx = db.transaction(() => {
+    db.prepare('DELETE FROM item_relationships').run();
     db.prepare('DELETE FROM item_collections').run();
     db.prepare('DELETE FROM item_tags').run();
     db.prepare('DELETE FROM tags').run();
@@ -1837,6 +1936,11 @@ ipcMain.handle('backup:import', async () => {
       VALUES (@item_id, @collection_id)
     `);
 
+    const insertRelationship = db.prepare(`
+      INSERT OR IGNORE INTO item_relationships (source_item_id, target_item_id, note, created_at)
+      VALUES (@source_item_id, @target_item_id, @note, @created_at)
+    `);
+
     for (const collection of backup.collections || []) {
       insertCollection.run(collection);
     }
@@ -1858,6 +1962,10 @@ ipcMain.handle('backup:import', async () => {
       .map((item: any) => ({ item_id: item.id, collection_id: item.collection_id }));
     for (const itemCollection of collectionLinks) {
       insertItemCollection.run(itemCollection);
+    }
+
+    for (const relationship of backup.item_relationships || []) {
+      insertRelationship.run({ note: '', created_at: nowIso(), ...relationship });
     }
   });
 

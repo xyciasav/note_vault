@@ -14,10 +14,11 @@ import {
   Settings
 } from 'lucide-react';
 import './styles/app.css';
-import type { BackupStats, ImportPreview, VaultItem, WatchedFolder, WatchedFolderFile } from './vaultApi';
+import type { BackupStats, ImportPreview, VaultItem, VaultRelationship, WatchedFolder, WatchedFolderFile } from './vaultApi';
 
 type TypeFilter = 'all' | 'note' | 'file';
 type ItemSort = 'updated' | 'title' | 'tags';
+type CollectionSort = 'name' | 'recent' | 'count';
 type AppView = 'dashboard' | 'library' | 'search' | 'settings';
 type BackupFrequency = 'on-close' | 'daily' | 'weekly' | 'never';
 type ImportFilter = 'all' | 'ready' | 'duplicates' | 'name-conflicts' | 'images' | 'pdfs';
@@ -25,6 +26,14 @@ type SettingsTab = 'general' | 'watch' | 'tags' | 'logs';
 type SearchViewMode = 'cards' | 'grid';
 type LibraryViewMode = 'cards' | 'compact' | 'grid';
 type DetailTab = 'preview' | 'notes' | 'info';
+
+type SlashCommand = {
+  id: string;
+  label: string;
+  hint: string;
+  insert: string;
+  selectOffset?: number;
+};
 
 type ImportDraft = ImportPreview & {
   importId: string;
@@ -56,6 +65,16 @@ function formatBytes(value: number) {
   if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
   return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
+
+const slashCommands: SlashCommand[] = [
+  { id: 'h1', label: '/h1 Heading 1', hint: 'Large heading', insert: '# Heading', selectOffset: 2 },
+  { id: 'h2', label: '/h2 Heading 2', hint: 'Section heading', insert: '## Heading', selectOffset: 3 },
+  { id: 'todo', label: '/todo Checklist', hint: 'Task checkbox', insert: '- [ ] Task', selectOffset: 6 },
+  { id: 'quote', label: '/quote Quote', hint: 'Block quote', insert: '> Quote', selectOffset: 2 },
+  { id: 'code', label: '/code Code block', hint: 'Fenced code block', insert: '```\ncode\n```', selectOffset: 4 },
+  { id: 'divider', label: '/divider Divider', hint: 'Horizontal rule', insert: '---' },
+  { id: 'bullet', label: '/bullet Bullet list', hint: 'List item', insert: '- List item', selectOffset: 2 }
+];
 
 function matchTextParts(text: string, query: string) {
   const needle = query.trim();
@@ -106,7 +125,8 @@ export default function App() {
   const [items, setItems] = useState<VaultItem[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
   const [tagRecords, setTagRecords] = useState<{ id?: string; name: string; count?: number }[]>([]);
-  const [collections, setCollections] = useState<{ id: string; name: string }[]>([]);
+  const [collections, setCollections] = useState<{ id: string; name: string; created_at?: string; count?: number }[]>([]);
+  const [collectionSort, setCollectionSort] = useState<CollectionSort>(() => (localStorage.getItem('vault-notes-collection-sort') as CollectionSort) || 'name');
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -184,6 +204,7 @@ export default function App() {
   const [backupFrequency, setBackupFrequency] = useState<BackupFrequency>('daily');
   const [backupRetentionCount, setBackupRetentionCount] = useState(10);
   const [backupStats, setBackupStats] = useState<BackupStats | null>(null);
+  const [allowNewImportTagSuggestions, setAllowNewImportTagSuggestions] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('vault-notes-theme') !== 'light');
   const [appVersion, setAppVersion] = useState('');
   const [logText, setLogText] = useState('');
@@ -194,6 +215,7 @@ export default function App() {
   const pendingWatchedReviewFilesRef = useRef<WatchedFolderFile[]>([]);
   const pendingWatchedScanFolderIdRef = useRef<string | undefined>(undefined);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const noteEditorRef = useRef<HTMLTextAreaElement | null>(null);
   const [dashboard, setDashboard] = useState<{ totalItems: number; notes: number; files: number; favorites: number; collections: number; tags: number; recentItems: VaultItem[] } | null>(null);
   const itemsListRef = useRef<HTMLDivElement | null>(null);
   const itemCardRefs = useRef(new Map<string, HTMLDivElement>());
@@ -207,18 +229,42 @@ export default function App() {
   });
   const [resizingPane, setResizingPane] = useState<'sidebar' | 'list' | null>(null);
   const [importProgress, setImportProgress] = useState<{ phase: string; current: number; total: number; fileName?: string } | null>(null);
+  const [relationships, setRelationships] = useState<VaultRelationship[]>([]);
+  const [relationshipItems, setRelationshipItems] = useState<VaultItem[]>([]);
+  const [relatedItemSearch, setRelatedItemSearch] = useState('');
+  const [slashQuery, setSlashQuery] = useState('');
 
   const selected = useMemo(() => {
     if (!selectedId) return null;
     return items.find(i => i.id === selectedId) || null;
   }, [items, selectedId]);
-  const isSelectedEditing = isEditing && Boolean(selectedId) && editingItemId === selectedId;
+  const isSelectedEditing = Boolean(selectedId) && editingItemId === selectedId;
 
   const sortedItems = useMemo(() => [...items].sort((left, right) => {
     if (itemSort === 'title') return (left.title || '').localeCompare(right.title || '');
     if (itemSort === 'tags') return ((left.tags || []).join(', ')).localeCompare((right.tags || []).join(', ')) || (left.title || '').localeCompare(right.title || '');
     return new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime();
   }), [items, itemSort]);
+
+  const sortedCollections = useMemo(() => [...collections].sort((left, right) => {
+    if (collectionSort === 'count') return (right.count || 0) - (left.count || 0) || left.name.localeCompare(right.name);
+    if (collectionSort === 'recent') return new Date(right.created_at || 0).getTime() - new Date(left.created_at || 0).getTime();
+    return left.name.localeCompare(right.name);
+  }), [collections, collectionSort]);
+
+  const relationshipCandidates = useMemo(() => {
+    const relatedIds = new Set(relationships.map(relationship => relationship.item.id));
+    const query = relatedItemSearch.trim().toLowerCase();
+    return relationshipItems
+      .filter(item => item.id !== selectedId && !relatedIds.has(item.id))
+      .filter(item => !query || [
+        item.title,
+        item.file_name,
+        ...(item.tags || []),
+        ...(item.collections || []).map(collection => collection.name)
+      ].join(' ').toLowerCase().includes(query))
+      .slice(0, 8);
+  }, [relationshipItems, relationships, relatedItemSearch, selectedId]);
 
   const bulkTagUsage = useMemo(() => {
     const usage = new Map<string, number>();
@@ -318,6 +364,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('vault-notes-search-view', searchViewMode);
   }, [searchViewMode]);
+
+  useEffect(() => {
+    localStorage.setItem('vault-notes-collection-sort', collectionSort);
+  }, [collectionSort]);
 
   useEffect(() => {
     localStorage.setItem('vault-notes-detail-focus', String(isDetailFocus));
@@ -500,6 +550,7 @@ export default function App() {
         setBackupFrequency(settings.backupFrequency);
         setBackupRetentionCount(settings.backupRetentionCount);
         setBackupStats(settings.backupStats);
+        setAllowNewImportTagSuggestions(settings.allowNewImportTagSuggestions !== false);
       })
       .catch(err => setStatus(`Could not load backup settings: ${err.message}`));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -518,6 +569,24 @@ export default function App() {
     refresh().catch(err => setStatus(err.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCollectionId]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setRelationships([]);
+      setRelationshipItems([]);
+      return;
+    }
+
+    Promise.all([
+      window.vaultApi.listRelationships(selectedId),
+      window.vaultApi.listItems({ search: '', tag: '', type: 'all', collectionId: '' })
+    ])
+      .then(([loadedRelationships, loadedItems]) => {
+        setRelationships(loadedRelationships);
+        setRelationshipItems(loadedItems);
+      })
+      .catch(err => setStatus(`Could not load relationships: ${err.message}`));
+  }, [selectedId]);
 
   useEffect(() => {
     if (appView !== 'search') return;
@@ -885,7 +954,9 @@ export default function App() {
         importId: `${preview.sourcePath}-${index}`,
         selected: preview.duplicateKind !== 'same-file',
         titleDraft: preview.title,
-        tagsDraft: [...new Set(preview.suggestedTags)],
+        tagsDraft: [...new Set(preview.suggestedTags.filter(tag =>
+          allowNewImportTagSuggestions || allTags.some(existing => existing.toLowerCase() === tag.toLowerCase())
+        ))],
         collectionNameDraft: selectedCollectionId
           ? collections.find(collection => collection.id === selectedCollectionId)?.name || ''
           : preview.suggestedCollectionName
@@ -1291,6 +1362,15 @@ export default function App() {
     );
   }
 
+  async function changeImportTagSuggestionMode(allowNewTags: boolean) {
+    const result = await window.vaultApi.setImportTagSuggestions(allowNewTags);
+    setAllowNewImportTagSuggestions(result.allowNewImportTagSuggestions);
+    setStatus(result.allowNewImportTagSuggestions
+      ? 'Import review can suggest new tags from file and folder names.'
+      : 'Import review will only suggest tags that already exist.'
+    );
+  }
+
   async function checkForUpdates() {
     const result = await window.vaultApi.checkForUpdates();
     if (!result.updateAvailable) setStatus('Note Vault is up to date.');
@@ -1459,6 +1539,89 @@ export default function App() {
       setStatus(`Deleted ${tags.length} selected tag${tags.length === 1 ? '' : 's'}.`);
     } catch (err: any) {
       setStatus(`Could not delete selected tags: ${err.message}`);
+    }
+  }
+
+  function updateSlashQuery(value: string, cursor: number | null) {
+    if (cursor === null) {
+      setSlashQuery('');
+      return;
+    }
+    const lineStart = value.lastIndexOf('\n', Math.max(0, cursor - 1)) + 1;
+    const currentLine = value.slice(lineStart, cursor);
+    const match = currentLine.match(/^\/([a-z0-9-]*)$/i);
+    setSlashQuery(match ? match[1].toLowerCase() : '');
+  }
+
+  function replaceEditorRange(start: number, end: number, insert: string, selectOffset?: number) {
+    const nextBody = `${draftBody.slice(0, start)}${insert}${draftBody.slice(end)}`;
+    markDraftTouched();
+    setDraftBody(nextBody);
+    window.requestAnimationFrame(() => {
+      const editor = noteEditorRef.current;
+      if (!editor) return;
+      editor.focus();
+      const cursor = start + (selectOffset ?? insert.length);
+      editor.setSelectionRange(cursor, cursor);
+      updateSlashQuery(nextBody, cursor);
+    });
+  }
+
+  function insertMarkdown(before: string, after = '', placeholder = 'text') {
+    const editor = noteEditorRef.current;
+    if (!editor || !isSelectedEditing) return;
+    const start = editor.selectionStart ?? draftBody.length;
+    const end = editor.selectionEnd ?? start;
+    const selectedText = draftBody.slice(start, end) || placeholder;
+    replaceEditorRange(start, end, `${before}${selectedText}${after}`, before.length);
+  }
+
+  function insertBlock(markup: string, selectOffset?: number) {
+    const editor = noteEditorRef.current;
+    if (!editor || !isSelectedEditing) return;
+    const start = editor.selectionStart ?? draftBody.length;
+    const prefix = start > 0 && draftBody[start - 1] !== '\n' ? '\n' : '';
+    replaceEditorRange(start, start, `${prefix}${markup}${markup.endsWith('\n') ? '' : '\n'}`, prefix.length + (selectOffset ?? markup.length));
+  }
+
+  function runSlashCommand(command: SlashCommand) {
+    const editor = noteEditorRef.current;
+    if (!editor || !isSelectedEditing) return;
+    const cursor = editor.selectionStart ?? draftBody.length;
+    const lineStart = draftBody.lastIndexOf('\n', Math.max(0, cursor - 1)) + 1;
+    replaceEditorRange(lineStart, cursor, command.insert, command.selectOffset);
+    setSlashQuery('');
+  }
+
+  function handleNoteKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (!isSelectedEditing) return;
+    const visibleCommands = slashCommands.filter(command => command.id.startsWith(slashQuery));
+    if (slashQuery && visibleCommands.length > 0 && (event.key === 'Enter' || event.key === 'Tab')) {
+      event.preventDefault();
+      runSlashCommand(visibleCommands[0]);
+    }
+  }
+
+  async function addRelationship(relatedItemId: string) {
+    if (!selectedId) return;
+    try {
+      const updated = await window.vaultApi.addRelationship({ itemId: selectedId, relatedItemId });
+      setRelationships(updated);
+      setRelatedItemSearch('');
+      setStatus('Relationship added.');
+    } catch (err: any) {
+      setStatus(`Could not add relationship: ${err.message}`);
+    }
+  }
+
+  async function removeRelationship(relatedItemId: string) {
+    if (!selectedId) return;
+    try {
+      const updated = await window.vaultApi.removeRelationship({ itemId: selectedId, relatedItemId });
+      setRelationships(updated);
+      setStatus('Relationship removed.');
+    } catch (err: any) {
+      setStatus(`Could not remove relationship: ${err.message}`);
     }
   }
 
@@ -1652,7 +1815,14 @@ export default function App() {
                   <div className="import-review-tags">
                     <span>Tags</span>
                     <div>
-                      {[...new Set([...draft.tagsDraft, ...draft.suggestedTags, ...allTags])].slice(0, 18).map(tag => (
+                      {[...new Set([
+                        ...draft.tagsDraft,
+                        ...(allowNewImportTagSuggestions
+                          ? draft.suggestedTags
+                          : draft.suggestedTags.filter(tag => allTags.some(existing => existing.toLowerCase() === tag.toLowerCase()))
+                        ),
+                        ...allTags
+                      ])].slice(0, 18).map(tag => (
                         <button
                           key={tag}
                           type="button"
@@ -1780,6 +1950,23 @@ export default function App() {
 
         {appView === 'library' && <div className="side-section">
           <div className="side-label">Collections</div>
+          <div className="collection-sort-row" aria-label="Sort collections">
+            {([
+              ['name', 'A-Z'],
+              ['recent', 'New'],
+              ['count', 'Used']
+            ] as [CollectionSort, string][]).map(([sort, label]) => (
+              <button
+                key={sort}
+                type="button"
+                className={collectionSort === sort ? 'active' : ''}
+                onClick={() => setCollectionSort(sort)}
+                title={`Sort collections by ${label}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
           <button
             className={selectedCollectionId === null ? 'active' : ''}
@@ -1788,13 +1975,14 @@ export default function App() {
             All Collections
           </button>
 
-          {collections.map(collection => (
+          {sortedCollections.map(collection => (
             <button
               key={collection.id}
               className={selectedCollectionId === collection.id ? 'active' : ''}
               onClick={() => selectCollection(collection.id)}
             >
               <FolderOpen size={16} /> {collection.name}
+              {collection.count !== undefined && <small>{collection.count}</small>}
             </button>
           ))}
 
@@ -2259,6 +2447,48 @@ export default function App() {
                 </div>}
                 <div className="muted-label">An item can belong to more than one project.</div>
 
+                <label className="field-label">Relationships</label>
+                <div className="relationships-panel">
+                  {relationships.length === 0 ? (
+                    <span className="muted-label">No relationships yet.</span>
+                  ) : relationships.map(relationship => (
+                    <div className="relationship-row" key={relationship.item.id}>
+                      <button type="button" onClick={() => {
+                        setSelectedId(relationship.item.id);
+                        setDetailTab('info');
+                      }}>
+                        <span>{relationship.item.title || relationship.item.file_name || 'Untitled item'}</span>
+                        <small>{relationship.item.type}{relationship.item.collections?.length ? ` · ${relationship.item.collections.map(collection => collection.name).join(', ')}` : ''}</small>
+                      </button>
+                      {isSelectedEditing && (
+                        <button type="button" className="relationship-remove" onClick={() => removeRelationship(relationship.item.id)}>
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  ))}
+
+                  {isSelectedEditing && (
+                    <div className="relationship-add">
+                      <input
+                        value={relatedItemSearch}
+                        onChange={event => setRelatedItemSearch(event.target.value)}
+                        placeholder="Search vault items to relate..."
+                      />
+                      <div className="relationship-candidates">
+                        {relationshipCandidates.length === 0 ? (
+                          <span className="muted-label">No available items match.</span>
+                        ) : relationshipCandidates.map(item => (
+                          <button key={item.id} type="button" onClick={() => addRelationship(item.id)}>
+                            <span>{item.title || item.file_name || 'Untitled item'}</span>
+                            <small>{item.type}{item.tags?.length ? ` · ${item.tags.slice(0, 3).map(tag => `#${tag}`).join(' ')}` : ''}</small>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <label className="field-label">Tags</label>
 
                 <div className="tag-editor">
@@ -2328,16 +2558,49 @@ export default function App() {
                 {detailTab === 'notes' && <>
                 <label className="field-label">Notes</label>
 
+                <div className="rich-editor-toolbar" aria-label="Note formatting tools">
+                  <button type="button" disabled={!isSelectedEditing} onClick={() => insertMarkdown('**', '**', 'bold text')}>Bold</button>
+                  <button type="button" disabled={!isSelectedEditing} onClick={() => insertMarkdown('_', '_', 'italic text')}>Italic</button>
+                  <button type="button" disabled={!isSelectedEditing} onClick={() => insertBlock('## Heading', 3)}>Heading</button>
+                  <button type="button" disabled={!isSelectedEditing} onClick={() => insertBlock('- [ ] Task', 6)}>Todo</button>
+                  <button type="button" disabled={!isSelectedEditing} onClick={() => insertBlock('```\ncode\n```', 4)}>Code</button>
+                  <button type="button" disabled={!isSelectedEditing} onClick={() => insertBlock('---')}>Divider</button>
+                </div>
+
+                <div className="rich-editor-wrap">
+                  {isSelectedEditing && slashQuery && (
+                    <div className="slash-command-menu">
+                      {slashCommands
+                        .filter(command => command.id.startsWith(slashQuery))
+                        .slice(0, 5)
+                        .map(command => (
+                          <button key={command.id} type="button" onMouseDown={event => {
+                            event.preventDefault();
+                            runSlashCommand(command);
+                          }}>
+                            <strong>{command.label}</strong>
+                            <span>{command.hint}</span>
+                          </button>
+                        ))}
+                    </div>
+                  )}
+
                 <textarea
+                  ref={noteEditorRef}
                   className="body-editor"
                   value={draftBody}
                   onChange={e => {
                     markDraftTouched();
                     setDraftBody(e.target.value);
+                    updateSlashQuery(e.target.value, e.target.selectionStart);
                   }}
+                  onKeyDown={handleNoteKeyDown}
+                  onClick={event => updateSlashQuery(draftBody, event.currentTarget.selectionStart)}
+                  onKeyUp={event => updateSlashQuery(draftBody, event.currentTarget.selectionStart)}
                   disabled={!isSelectedEditing}
-                  placeholder="Type meeting notes, project ideas, research, links, reminders, or anything you want searchable..."
+                  placeholder="Type notes, markdown, code blocks, links, reminders, or try /h1, /todo, /code, /divider..."
                 />
+                </div>
                 {selected?.type === 'file' && (
                   <p className="muted-label">
                     These are your notes about the file. The file's extracted text lives under Preview.
@@ -2747,6 +3010,25 @@ export default function App() {
               <input type="checkbox" checked={isDarkMode} onChange={event => setIsDarkMode(event.target.checked)} />
               <span>Dark Mode</span>
             </label>
+          </section>
+
+          <section className="settings-section settings-compact">
+            <h2>Import Suggestions</h2>
+            <p>
+              Control whether import review can create brand-new tag suggestions from file and folder
+              names, or only recommend tags you already saved.
+            </p>
+            <label className="theme-toggle">
+              <input
+                type="checkbox"
+                checked={allowNewImportTagSuggestions}
+                onChange={event => changeImportTagSuggestionMode(event.target.checked)}
+              />
+              <span>Suggest new tags during import</span>
+            </label>
+            <p className="settings-note">
+              Off means import review only surfaces existing saved tags. You can still manually add tags.
+            </p>
           </section>
 
           <section className="settings-section settings-backup">
