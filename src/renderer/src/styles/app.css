@@ -2467,8 +2467,13 @@ body {
 }
 
 .pane-resizer-list {
-  left: calc(var(--list-width, 370px) - 4px) !important;
+  left: calc(var(--responsive-list-width, min(var(--list-width, 370px), 42vw)) - 4px) !important;
   top: var(--app-header-height) !important;
+}
+
+.app-shell.detail-focus .pane-resizer-list,
+.app-shell.list-focus .pane-resizer-list {
+  display: none !important;
 }
 
 .mode-slider {

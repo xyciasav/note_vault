@@ -2800,22 +2800,6 @@ export default function App() {
     }
   }
 
-  async function openPhotoSearch(options: { skipConfirm?: boolean } = {}) {
-    if (!options.skipConfirm && !(await confirmSaveDirtyChanges())) return;
-    setWorkspaceMode('photo');
-    setPhotoWorkspaceView('search');
-    setPhotoMediaFilter('media');
-    setSearchTags([]);
-    setSearchUntaggedOnly(false);
-    setSearchTagsOnly(false);
-    setSearchType('file');
-    setSearchCollectionId('');
-    setSearchViewMode('grid');
-    setSearchSort('created');
-    setAppView('search');
-    window.setTimeout(() => searchInputRef.current?.focus(), 50);
-  }
-
   async function runDashboardSearch(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const query = searchText.trim();
@@ -5384,13 +5368,7 @@ export default function App() {
               className={appView === 'search' && photoWorkspaceView === 'library' && searchViewMode === 'grid' && searchTags.includes('photo') ? 'active' : ''}
               onClick={() => openPhotoView()}
             >
-              <Image size={16} /> Photo Library
-            </button>
-            <button
-              className={appView === 'search' && photoWorkspaceView === 'search' ? 'active' : ''}
-              onClick={() => openPhotoSearch()}
-            >
-              <Search size={16} /> Photo Search
+              <Image size={16} /> Media Library
             </button>
           </div>
         )}
@@ -5600,9 +5578,6 @@ export default function App() {
               <button className="dashboard-card" onClick={() => openPhotoView({ mediaFilter: 'video' })}>
                 <span>Videos</span><strong>{dashboard?.videos ?? 0}</strong><small>Browse movie clips and visual media in the vault.</small>
               </button>
-              <button className="dashboard-card" onClick={() => openPhotoSearch()}>
-                <span>Find</span><strong>Search</strong><small>Search photos by tag, filename, collection, or notes.</small>
-              </button>
               <button className="dashboard-card" onClick={importGooglePhotosTakeout} disabled={isImportingPhotos}>
                 <span>Import Wizard</span><strong>{dashboard?.googlePhotos ?? 0}</strong><small>Bring in Google Photos ZIPs with metadata. iCloud can plug in later.</small>
               </button>
@@ -5610,7 +5585,7 @@ export default function App() {
                 <span>Add</span><strong>Upload</strong><small>Add images or videos from your computer.</small>
                 <input type="file" multiple accept="image/*,video/*" onChange={event => onFileInput(event, 'photo')} />
               </label>
-              <button className="dashboard-card" onClick={() => openPhotoSearch()}>
+              <button className="dashboard-card" onClick={() => changeAppView('locations')}>
                 <span>Locations Found</span><strong>{dashboard?.locations ?? 0}</strong><small>Photos/videos with location metadata text available.</small>
               </button>
               <button className="dashboard-card dashboard-card-warm" onClick={() => openDashboardLibrary()}>
@@ -5915,8 +5890,7 @@ export default function App() {
             </section>
             <div className="dashboard-section-label"><span>Photo actions</span><small>Browse, import, and organize media.</small></div>
             <section className="dashboard-cards dashboard-action-grid">
-              <button className="dashboard-card action-card" onClick={() => openPhotoView()}><span>Browse</span><strong>Media Library</strong><small>Show only photos and videos, paged for performance.</small></button>
-              <button className="dashboard-card action-card" onClick={() => openPhotoSearch()}><span>Find</span><strong>Photo Search</strong><small>Search media by text, tags, collections, or filename.</small></button>
+              <button className="dashboard-card action-card" onClick={() => openPhotoView()}><span>Browse + Find</span><strong>Media Library</strong><small>Browse, search, filter, and page through photos and videos.</small></button>
               <button className="dashboard-card action-card" onClick={() => openImportWizard('photo')} disabled={isImportingPhotos}><span>Import</span><strong>Import Wizard</strong><small>Choose Google Takeout, iCloud media, or local photo folders.</small></button>
               <label className="dashboard-card action-card dashboard-upload-card"><span>Add</span><strong>Upload Media</strong><small>Add image and video files from your computer.</small><input type="file" multiple accept="image/*,video/*" onChange={event => onFileInput(event, 'photo')} /></label>
               <button className="dashboard-card action-card" onClick={() => openFolderPicker('photo')}><span>Add</span><strong>Add Folder</strong><small>Add a folder of photos/videos and review before saving.</small></button>
@@ -7425,7 +7399,7 @@ export default function App() {
               <h1>{workspaceMode === 'photo' ? 'Photo Library' : 'Search Vault'}</h1>
               <p>
                 {workspaceMode === 'photo' && photoWorkspaceView === 'library'
-                  ? 'A warm, browse-first place for photos and videos by date.'
+                  ? 'Browse, search, filter, and page through your photos and videos in one place.'
                   : workspaceMode === 'photo'
                   ? 'Search photos and videos by words, tags, collections, or filename.'
                   : 'Search by note text, file name, tags, projects, people, tasks, or reference notes.'}
@@ -7435,35 +7409,32 @@ export default function App() {
             <div className="search-header-actions">
               <button onClick={() => changeAppView('mode')}>{workspaceMode === 'photo' ? 'Photo Dashboard' : workspaceMode === 'music' ? 'Music Dashboard' : 'Notes Dashboard'}</button>
               <button onClick={() => changeAppView('dashboard')}>Home</button>
-              <button onClick={clearFullSearch}>{workspaceMode === 'photo' ? 'Clear Photo Search' : 'Clear Search'}</button>
+              <button onClick={clearFullSearch}>{workspaceMode === 'photo' ? 'Clear Media Filters' : 'Clear Search'}</button>
             </div>
           </div>
 
           {workspaceMode === 'photo' && photoWorkspaceView === 'library' && (
             <div className="photo-library-welcome">
               <div>
-                <strong>Browse your saved moments</strong>
-                <span>Sort by date, open previews, or jump into search when you want to find something specific.</span>
+                <strong>Browse and find your saved moments</strong>
+                <span>Use the search box, tags, collections, media filters, sort, or paging without leaving the library.</span>
               </div>
-              <button onClick={() => openPhotoSearch({ skipConfirm: true })}>
-                <Search size={16} /> Search Photos
-              </button>
             </div>
           )}
 
-          {(workspaceMode !== 'photo' || photoWorkspaceView === 'search') && <div className="full-search-box" onMouseDown={() => searchInputRef.current?.focus()}>
+          <div className="full-search-box" onMouseDown={() => searchInputRef.current?.focus()}>
             <Search size={22} />
             <input
               ref={searchInputRef}
               value={searchText}
               onChange={e => setSearchText(e.target.value)}
               onMouseDown={event => event.stopPropagation()}
-              placeholder="Search tasks, projects, people, notes, files..."
+              placeholder={workspaceMode === 'photo' ? 'Search photos and videos by filename, tag, collection, or notes...' : 'Search tasks, projects, people, notes, files...'}
               autoFocus
             />
-          </div>}
+          </div>
 
-          {(workspaceMode !== 'photo' || photoWorkspaceView === 'search') && <div className="search-filters">
+          <div className="search-filters">
             <div className="search-tag-dropdown-wrap">
               <div className="search-filter-label">Type</div>
               <button
@@ -7657,37 +7628,22 @@ export default function App() {
             </label>
 
             <button onClick={() => runFullSearch(0)}>Search</button>
-          </div>}
-
-          {workspaceMode === 'photo' && photoWorkspaceView === 'library' && (
-            <div className="photo-browse-controls">
-              <label className="search-sort-control">
-                <span>Sort photos</span>
-                <select value={searchSort} onChange={event => {
-                  setSearchSort(event.target.value as SearchSort);
-                  window.setTimeout(() => runFullSearch(0), 0);
-                }}>
-                  <option value="created">Date taken</option>
-                  <option value="updated">Recently updated</option>
-                  <option value="title">A-Z</option>
-                </select>
-              </label>
-            </div>
-          )}
+          </div>
 
           <div className="search-results-header">
             <span>
               {searchResults.length} result{searchResults.length === 1 ? '' : 's'}
             </span>
 
-            {(workspaceMode !== 'photo' || photoWorkspaceView === 'search') && (searchText || searchTags.length > 0 || searchUntaggedOnly || searchType !== 'all') && (
+            {(searchText || searchTags.length > 0 || searchUntaggedOnly || searchType !== 'all' || searchCollectionId) && (
               <small>
     {searchText && <>Text: “{searchText}” </>}
                 {searchTags.length > 0 && (
                   <>Tags: {searchTags.map(tag => `#${tag}`).join(', ')} </>
                 )}
                 {searchUntaggedOnly && <>Tags: all not tagged </>}
-                {searchType !== 'all' && <>Type: {searchType}</>}
+                {searchType !== 'all' && <>Type: {searchType} </>}
+                {searchCollectionId && <>Collection: {collections.find(collection => collection.id === searchCollectionId)?.name || 'selected'}</>}
               </small>
             )}
           </div>
