@@ -91,7 +91,7 @@ const maxHashFileBytes = 250_000_000;
 const defaultListLimit = 750;
 const maxListLimit = 2000;
 const googlePhotosMediaExts = new Set([
-  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tif', '.tiff',
+  '.jpg', '.jpeg', '.jpe', '.jfif', '.jpegs', '.png', '.gif', '.webp', '.bmp', '.tif', '.tiff',
   '.heic', '.heif', '.dng', '.cr2', '.cr3', '.nef', '.arw', '.raf',
   '.mp4', '.mov', '.m4v', '.avi', '.mkv', '.webm', '.3gp',
   '.mpg', '.mpeg', '.mts', '.m2ts'
@@ -2361,7 +2361,7 @@ async function showWhatsNewIfUpdated() {
   }
 }
 
-const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.ico']);
+const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.jpe', '.jfif', '.jpegs', '.webp', '.gif', '.bmp', '.ico']);
 
 function createThumbnailData(sourcePath: string, ext: string) {
   const lowerExt = ext.toLowerCase();
@@ -2382,7 +2382,7 @@ function createThumbnailData(sourcePath: string, ext: string) {
 }
 
 function readJpegOrientationRotation(sourcePath: string, ext: string) {
-  if (!['.jpg', '.jpeg'].includes(ext.toLowerCase())) return 0;
+  if (!['.jpg', '.jpeg', '.jpe', '.jfif', '.jpegs'].includes(ext.toLowerCase())) return 0;
   try {
     const buffer = fs.readFileSync(sourcePath).subarray(0, 256 * 1024);
     if (buffer.length < 4 || buffer.readUInt16BE(0) !== 0xffd8) return 0;
@@ -2427,7 +2427,7 @@ function generateMissingImageThumbnails(limit = 500) {
     SELECT id, file_stored_name, file_source_path, file_ext, image_rotation
     FROM items
     WHERE type = 'file'
-      AND (thumbnail_data IS NULL OR (LOWER(file_ext) IN ('.jpg', '.jpeg') AND COALESCE(image_rotation, 0) = 0))
+      AND (thumbnail_data IS NULL OR (LOWER(file_ext) IN ('.jpg', '.jpeg', '.jpe', '.jfif', '.jpegs') AND COALESCE(image_rotation, 0) = 0))
     LIMIT ?
   `).all(limit) as { id: string; file_stored_name?: string; file_source_path?: string; file_ext?: string; image_rotation?: number }[];
   const update = db.prepare('UPDATE items SET thumbnail_data = COALESCE(?, thumbnail_data), image_rotation = ? WHERE id = ?');
@@ -2684,7 +2684,7 @@ ipcMain.handle('items:getMediaUrl', (_event, id: string) => {
 ipcMain.handle('dashboard:summary', () => {
   const count = (where = '', params: unknown[] = []) =>
     (db.prepare(`SELECT COUNT(*) AS total FROM items ${where}`).get(...params) as { total: number }).total;
-  const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
+  const imageExts = ['.jpg', '.jpeg', '.jpe', '.jfif', '.jpegs', '.png', '.gif', '.webp', '.bmp', '.svg'];
   const videoExts = ['.mp4', '.webm', '.mov', '.m4v', '.ogv'];
   const extPlaceholders = (values: string[]) => values.map(() => '?').join(', ');
   const nonDocumentExts = [...imageExts, ...videoExts, ...audioExts];
@@ -2743,7 +2743,7 @@ ipcMain.handle('items:list', (_event, args: { search?: string; tag?: string; typ
   const conditions: string[] = [];
   const params: unknown[] = [];
   const placeholders = (values: string[]) => values.map(() => '?').join(', ');
-  const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
+  const imageExts = ['.jpg', '.jpeg', '.jpe', '.jfif', '.jpegs', '.png', '.gif', '.webp', '.bmp', '.svg'];
   const videoExts = ['.mp4', '.webm', '.mov', '.m4v', '.ogv'];
   const mediaExts = [...imageExts, ...videoExts];
   const excludedJournalFileExts = [...mediaExts, ...audioExts];
@@ -2889,10 +2889,10 @@ ipcMain.handle('collections:list', () => {
       collections.*,
       COUNT(item_collections.item_id) AS count,
       SUM(CASE WHEN items.type = 'note' THEN 1 ELSE 0 END) AS note_count,
-      SUM(CASE WHEN items.type = 'file' AND LOWER(items.file_ext) IN ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg') THEN 1 ELSE 0 END) AS image_count,
+      SUM(CASE WHEN items.type = 'file' AND LOWER(items.file_ext) IN ('.jpg', '.jpeg', '.jpe', '.jfif', '.jpegs', '.png', '.gif', '.webp', '.bmp', '.svg') THEN 1 ELSE 0 END) AS image_count,
       SUM(CASE WHEN items.type = 'file' AND LOWER(items.file_ext) IN ('.mp4', '.webm', '.mov', '.m4v', '.ogv') THEN 1 ELSE 0 END) AS video_count,
       SUM(CASE WHEN items.type = 'file' AND LOWER(items.file_ext) IN (${audioExts.map(() => '?').join(', ')}) THEN 1 ELSE 0 END) AS audio_count,
-      SUM(CASE WHEN items.type = 'file' AND (items.file_ext IS NULL OR LOWER(items.file_ext) NOT IN ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.mp4', '.webm', '.mov', '.m4v', '.ogv', ${audioExts.map(() => '?').join(', ')})) THEN 1 ELSE 0 END) AS document_count,
+      SUM(CASE WHEN items.type = 'file' AND (items.file_ext IS NULL OR LOWER(items.file_ext) NOT IN ('.jpg', '.jpeg', '.jpe', '.jfif', '.jpegs', '.png', '.gif', '.webp', '.bmp', '.svg', '.mp4', '.webm', '.mov', '.m4v', '.ogv', ${audioExts.map(() => '?').join(', ')})) THEN 1 ELSE 0 END) AS document_count,
       (SELECT COUNT(*) FROM collections child WHERE child.parent_id = collections.id) AS child_count
     FROM collections
     LEFT JOIN item_collections ON item_collections.collection_id = collections.id

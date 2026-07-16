@@ -92,7 +92,7 @@ const memoryScrapbookPalette = [
   { name: 'Ink', value: '#1f2937' }
 ];
 const onboardingSteps: OnboardingStep[] = ['welcome', 'navigation', 'connect', 'start'];
-const imagePreviewExts = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg']);
+const imagePreviewExts = new Set(['.jpg', '.jpeg', '.jpe', '.jfif', '.jpegs', '.png', '.gif', '.webp', '.bmp', '.svg']);
 const videoPreviewExts = new Set(['.mp4', '.webm', '.mov', '.m4v', '.ogv']);
 const audioPreviewExts = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a', '.ogg', '.oga', '.opus', '.wma', '.aiff', '.aif']);
 const noteImportExts = new Set([
@@ -3483,11 +3483,12 @@ export default function App() {
     return collectionNameForDraft(draft);
   }
 
-  async function prepareImportEntries(fileInputs: (WatchedFolderFile | { sourcePath: string; relativePath?: string })[], options?: { watchedFolderId?: string; intent?: ImportIntent }) {
+  async function prepareImportEntries(fileInputs: (WatchedFolderFile | { sourcePath: string; relativePath?: string })[], options?: { watchedFolderId?: string; intent?: ImportIntent; missingPathCount?: number }) {
     const intent = options?.intent || 'auto';
     const originalCount = fileInputs.length;
     const acceptedInputs = fileInputs.filter(file => importIntentAcceptsFile(intent, file));
     const skippedCount = originalCount - acceptedInputs.length;
+    const missingPathCount = options?.missingPathCount || 0;
 
     if (acceptedInputs.length === 0) {
       if (originalCount > 0 && intent !== 'auto') {
@@ -3549,7 +3550,14 @@ export default function App() {
         setStatus('No readable watched-folder files needed review. Marked this scan handled.');
         return;
       }
-      setStatus(`Review ${previews.length} file${previews.length === 1 ? '' : 's'} before importing${skippedCount ? `. Skipped ${skippedCount} unrelated file${skippedCount === 1 ? '' : 's'}` : ''}.`);
+      const unreadableCount = Math.max(0, acceptedInputs.length - previews.length);
+      setStatus(
+        `Review ${previews.length} file${previews.length === 1 ? '' : 's'} before importing` +
+        (skippedCount ? `. Skipped ${skippedCount} unrelated file${skippedCount === 1 ? '' : 's'}` : '') +
+        (missingPathCount ? `. ${missingPathCount} selected file${missingPathCount === 1 ? '' : 's'} could not be read from Electron` : '') +
+        (unreadableCount ? `. ${unreadableCount} file${unreadableCount === 1 ? '' : 's'} could not be previewed` : '') +
+        '.'
+      );
     } finally {
       setIsPreparingImport(false);
     }
@@ -3558,12 +3566,14 @@ export default function App() {
   async function prepareImport(files: File[], intent: ImportIntent = 'auto') {
     if (files.length === 0) return;
 
-    const fileInputs = files.map(file => ({
+    const mappedFiles = files.map(file => ({
       sourcePath: window.vaultApi.getPathForFile(file),
       relativePath: (file as any).webkitRelativePath || file.name
-    })).filter(file => file.sourcePath);
+    }));
+    const fileInputs = mappedFiles.filter(file => file.sourcePath);
+    const missingPathCount = mappedFiles.length - fileInputs.length;
 
-    await prepareImportEntries(fileInputs, { intent });
+    await prepareImportEntries(fileInputs, { intent, missingPathCount });
   }
 
   async function uploadDraft(draft: ImportDraft, collectionIds: string[]) {
@@ -5762,8 +5772,8 @@ export default function App() {
             <section className="dashboard-cards dashboard-action-grid">
               <button className="dashboard-card action-card" onClick={() => changeAppView('search')}><span>Find</span><strong>Search</strong><small>Search text, tags, collections, and files.</small></button>
               <button className="dashboard-card action-card" onClick={() => openImportWizard('journal')}><span>Import</span><strong>Import Wizard</strong><small>Bring in Notion exports or OneNote notebooks.</small></button>
-              <label className="dashboard-card action-card dashboard-upload-card"><span>Add</span><strong>Upload Files</strong><small>Add notes, PDFs, docs, code, text, or references.</small><input type="file" multiple onChange={event => onFileInput(event, 'note')} /></label>
-              <button className="dashboard-card action-card" onClick={() => openFolderPicker('note')}><span>Add</span><strong>Add Folder</strong><small>Add a folder of notes, docs, code, PDFs, or references.</small></button>
+              <label className="dashboard-card action-card dashboard-upload-card"><span>Add</span><strong>Upload Something</strong><small>Add notes, PDFs, docs, photos, audio, code, text, or references. Note Vault will sort them by type.</small><input type="file" multiple onChange={event => onFileInput(event, 'auto')} /></label>
+              <button className="dashboard-card action-card" onClick={() => openFolderPicker('auto')}><span>Add</span><strong>Add Folder</strong><small>Add a mixed folder. Photos, audio, notes, docs, and references get sorted automatically.</small></button>
             </section>
             <section className="quick-note-panel">
               <div className="dashboard-section-label quick-note-label"><span>Quick note</span><small>Write and save without opening the full library.</small></div>
