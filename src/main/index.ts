@@ -2254,6 +2254,12 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '2.0.5': [
+    'Large vault browsing is smoother thanks to batched tag and collection lookups and new database indexes.',
+    'Normal library pages now load fewer thumbnail-heavy cards at once for better responsiveness with thousands of photos/files.',
+    'Search and quick-filter fields are protected from a stuck drag/drop overlay that could block clicking or typing.',
+    'The file drop overlay now clears more reliably after blur, drag end, or drop events.'
+  ],
   '2.0.4': [
     'Library Grid view now uses consistent tile sizing across vault libraries.',
     'Mixed file and folder imports are smarter: Dashboard and Notes uploads sort photos, audio, notes, and files by type.',
