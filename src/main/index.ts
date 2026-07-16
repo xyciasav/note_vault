@@ -2191,6 +2191,13 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '2.0.4': [
+    'Library Grid view now uses consistent tile sizing across vault libraries.',
+    'Mixed file and folder imports are smarter: Dashboard and Notes uploads sort photos, audio, notes, and files by type.',
+    'JPEG variants such as .jpe, .jfif, and .jpegs are recognized for import, thumbnails, and photo counts.',
+    'Item edit mode now refreshes the selected item before editing and focuses the title field to reduce sticky rename/edit behavior.',
+    'Memory pages now include an Add from Vault tray and an optional Save Relationships action.'
+  ],
   '2.0.3': [
     'The app version is visible again in the top header and Home Dashboard so you can confirm the installed build after updating.',
     'This release includes the 2.0.2 mode-aware Add Folder/upload behavior for Dashboard, Notes, Photos, and Music.',
