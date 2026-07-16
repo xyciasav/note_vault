@@ -3027,6 +3027,18 @@ export default function App() {
   }, [quickNoteTagsOpen]);
 
   useEffect(() => {
+    const clearDragState = () => setIsDragging(false);
+    window.addEventListener('blur', clearDragState);
+    window.addEventListener('dragend', clearDragState);
+    window.addEventListener('drop', clearDragState);
+    return () => {
+      window.removeEventListener('blur', clearDragState);
+      window.removeEventListener('dragend', clearDragState);
+      window.removeEventListener('drop', clearDragState);
+    };
+  }, []);
+
+  useEffect(() => {
     if (selected) {
       const selectionChanged = lastSelectedIdRef.current !== selected.id;
       const shouldEdit = selected.id === autoEditIdRef.current;
@@ -4652,7 +4664,7 @@ export default function App() {
       className={`app-shell ${isDarkMode ? 'theme-dark' : ''} ${appView === 'library' && isDetailFocus ? 'detail-focus' : ''} ${appView === 'library' && isListFocus ? 'list-focus' : ''} ${resizingPane ? 'is-resizing' : ''}`}
       style={{ '--sidebar-width': `${sidebarWidth}px`, '--list-width': `${listWidth}px` } as React.CSSProperties}
       onDragOver={e => {
-        if (!Array.from(e.dataTransfer.types || []).includes('Files')) return;
+        if (!Array.from(e.dataTransfer.types || []).includes('Files') || e.dataTransfer.items.length === 0) return;
         e.preventDefault();
         setIsDragging(true);
       }}
@@ -4663,7 +4675,7 @@ export default function App() {
       onDrop={onDrop}
     >
       {isDragging && (
-        <div className="drop-overlay">
+        <div className="drop-overlay" onDragLeave={() => setIsDragging(false)}>
           Drop files to add them to your vault
         </div>
       )}
