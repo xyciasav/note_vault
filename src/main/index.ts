@@ -2191,6 +2191,11 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '2.0.2': [
+    'Dashboard upload and Add Folder now use smart mixed import, tagging photos, audio, and files by type.',
+    'Notes, Photos, and Music uploads are mode-aware so each workspace only reviews files that belong there.',
+    'Focused folder imports now tell you when unrelated files were skipped.'
+  ],
   '2.0.1': [
     'Trial handling now detects obvious local clock rollback attempts without adding recurring license checks.',
     'Licensed users still validate offline from their signed one-time activation token.',
