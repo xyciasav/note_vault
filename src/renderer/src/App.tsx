@@ -516,6 +516,7 @@ function LocationPlot({
   isDownloadingMap: boolean;
   onDownloadTiles: (tiles: MapTile[]) => void;
 }) {
+  const [mapZoomDelta, setMapZoomDelta] = useState(0);
   const points = locations.filter(location =>
     Number.isFinite(location.latitude) && Number.isFinite(location.longitude)
   );
@@ -532,8 +533,8 @@ function LocationPlot({
   }
 
   const tileSize = 256;
-  const mapWidth = 720;
-  const mapHeight = 420;
+  const mapWidth = 1180;
+  const mapHeight = 460;
   const lats = points.map(point => point.latitude as number);
   const lngs = points.map(point => point.longitude as number);
   const minLat = Math.min(...lats);
@@ -544,7 +545,8 @@ function LocationPlot({
   const lngRange = Math.max(0.0001, maxLng - minLng);
   const centerLat = (minLat + maxLat) / 2;
   const centerLng = (minLng + maxLng) / 2;
-  const zoom = Math.max(2, Math.min(12, Math.floor(Math.log2(270 / Math.max(latRange, lngRange)))));
+  const baseZoom = Math.max(2, Math.min(12, Math.floor(Math.log2(270 / Math.max(latRange, lngRange)))));
+  const zoom = Math.max(2, Math.min(15, baseZoom + mapZoomDelta));
   const scale = tileSize * (2 ** zoom);
   const project = (lat: number, lng: number) => {
     const sinLat = Math.sin((lat * Math.PI) / 180);
@@ -579,13 +581,23 @@ function LocationPlot({
 
   return (
     <section className="location-map-card">
-      <div>
-        <span className="dashboard-kicker">Offline Map</span>
-        <h3>Photo places on downloaded map tiles</h3>
-        <p>Note Vault only loads local map tiles here. Use the download button when you want to cache the map for these location pins.</p>
-        <button className="dashboard-secondary-action location-map-download" type="button" onClick={() => onDownloadTiles(tiles)} disabled={isDownloadingMap}>
-          {isDownloadingMap ? 'Downloading map...' : 'Download Offline Map'}
-        </button>
+      <div className="location-map-copy">
+        <div>
+          <span className="dashboard-kicker">Offline Map</span>
+          <h3>Photo places on downloaded map tiles</h3>
+          <p>Note Vault only loads local map tiles here. Use the download button when you want to cache the map for these location pins.</p>
+        </div>
+        <div className="location-map-actions">
+          <button className="dashboard-secondary-action location-map-download" type="button" onClick={() => onDownloadTiles(tiles)} disabled={isDownloadingMap}>
+            {isDownloadingMap ? 'Downloading map...' : 'Download Offline Map'}
+          </button>
+          <div className="location-map-zoom-controls" aria-label="Map zoom controls">
+            <button type="button" onClick={() => setMapZoomDelta(delta => Math.max(-3, delta - 1))} disabled={zoom <= 2}>−</button>
+            <span>Zoom {zoom}</span>
+            <button type="button" onClick={() => setMapZoomDelta(delta => Math.min(5, delta + 1))} disabled={zoom >= 15}>+</button>
+            <button type="button" onClick={() => setMapZoomDelta(0)} disabled={mapZoomDelta === 0}>Reset</button>
+          </div>
+        </div>
       </div>
       <div className="location-tile-map" role="img" aria-label="Imported photo and video map">
         {!mapTileBaseUrl && (

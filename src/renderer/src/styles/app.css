@@ -2110,6 +2110,9 @@ body {
 .theme-dark .location-map-card { background: rgba(15, 23, 42, .82); border-color: rgba(96, 165, 250, .24); box-shadow: 0 20px 50px rgba(0, 0, 0, .24); }
 .theme-dark .location-map-card h3 { color: #f8fafc; }
 .theme-dark .location-map-card p { color: #94a3b8; }
+.theme-dark .location-map-zoom-controls { background: rgba(11, 18, 32, .82); border-color: rgba(96, 165, 250, .24); }
+.theme-dark .location-map-zoom-controls button { background: #172033; border-color: #334155; color: #dbeafe; }
+.theme-dark .location-map-zoom-controls span { color: #bfdbfe; }
 .theme-dark .location-tile-map { border-color: rgba(148, 163, 184, .28); background: #0b1220; }
 .theme-dark .tag-manager-add button,
 .theme-dark .tag-manager-row button,
@@ -2888,9 +2891,9 @@ body {
 
 .location-map-card {
   display: grid;
-  grid-template-columns: minmax(220px, .8fr) minmax(360px, 1.2fr);
-  gap: 20px;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
   width: 100%;
   margin: 20px 0 18px;
   padding: 20px;
@@ -2898,6 +2901,13 @@ body {
   border-radius: 22px;
   background: rgba(255, 255, 255, .74);
   box-shadow: 0 18px 42px rgba(15, 23, 42, .08);
+}
+
+.location-map-copy {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
 }
 
 .location-map-card h3 {
@@ -2914,6 +2924,8 @@ body {
 .location-tile-map {
   position: relative;
   width: 100%;
+  display: grid;
+  justify-items: center;
   overflow: hidden;
   border-radius: 18px;
   border: 1px solid rgba(15, 23, 42, .1);
@@ -2922,7 +2934,49 @@ body {
 }
 
 .location-map-download {
-  margin-top: 16px;
+  margin: 0;
+}
+
+.location-map-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+}
+
+.location-map-zoom-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid rgba(148, 163, 184, .28);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, .08);
+}
+
+.location-map-zoom-controls button {
+  min-width: 32px;
+  min-height: 30px;
+  border: 1px solid rgba(37, 99, 235, .28);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #1e3a8a;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.location-map-zoom-controls button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.location-map-zoom-controls span {
+  padding: 0 6px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .location-map-missing {
@@ -4626,6 +4680,15 @@ span.word-wall-token {
 
   .location-map-card {
     grid-template-columns: 1fr;
+  }
+
+  .location-map-copy {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .location-map-actions {
+    justify-content: flex-start;
   }
 
   .app-mode-header {
