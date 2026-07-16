@@ -738,6 +738,21 @@ function initDb() {
     FROM items
     JOIN collections ON collections.id = items.collection_id
   `);
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_items_updated_at ON items(updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_items_created_at ON items(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_items_type ON items(type);
+    CREATE INDEX IF NOT EXISTS idx_items_file_ext ON items(file_ext);
+    CREATE INDEX IF NOT EXISTS idx_items_favorite ON items(favorite);
+    CREATE INDEX IF NOT EXISTS idx_items_title_nocase ON items(title COLLATE NOCASE);
+    CREATE INDEX IF NOT EXISTS idx_item_tags_tag_id ON item_tags(tag_id);
+    CREATE INDEX IF NOT EXISTS idx_item_collections_collection_id ON item_collections(collection_id);
+    CREATE INDEX IF NOT EXISTS idx_collections_mode ON collections(mode);
+    CREATE INDEX IF NOT EXISTS idx_collections_parent_id ON collections(parent_id);
+    CREATE INDEX IF NOT EXISTS idx_relationships_target ON item_relationships(target_item_id);
+    CREATE INDEX IF NOT EXISTS idx_memory_items_item ON memory_items(item_id);
+  `);
 }
 
 function nowIso() {
@@ -885,6 +900,54 @@ function rowToItem(row: any) {
     collections: collectionRows,
     file_path: row.file_source_path || (row.file_stored_name ? path.join(filesDir, row.file_stored_name) : null)
   };
+}
+
+function rowsToItems(rows: any[]) {
+  if (rows.length === 0) return [];
+  const ids = rows.map(row => row.id);
+  const placeholders = ids.map(() => '?').join(', ');
+  const tagRows = db.prepare(`
+    SELECT item_tags.item_id, tags.name
+    FROM item_tags
+    JOIN tags ON tags.id = item_tags.tag_id
+    WHERE item_tags.item_id IN (${placeholders})
+    ORDER BY tags.name
+  `).all(...ids) as { item_id: string; name: string }[];
+  const collectionRows = db.prepare(`
+    SELECT item_collections.item_id, collections.id, collections.name
+    FROM item_collections
+    JOIN collections ON collections.id = item_collections.collection_id
+    WHERE item_collections.item_id IN (${placeholders})
+    ORDER BY collections.name
+  `).all(...ids) as { item_id: string; id: string; name: string }[];
+
+  const tagsByItem = new Map<string, string[]>();
+  for (const tag of tagRows) {
+    const tags = tagsByItem.get(tag.item_id) || [];
+    tags.push(tag.name);
+    tagsByItem.set(tag.item_id, tags);
+  }
+
+  const collectionsByItem = new Map<string, { id: string; name: string }[]>();
+  for (const collection of collectionRows) {
+    const collections = collectionsByItem.get(collection.item_id) || [];
+    collections.push({ id: collection.id, name: collection.name });
+    collectionsByItem.set(collection.item_id, collections);
+  }
+
+  return rows.map(row => {
+    const collections = collectionsByItem.get(row.id) || [];
+    return {
+      ...row,
+      favorite: Boolean(row.favorite),
+      private: Boolean(row.private),
+      image_rotation: Number(row.image_rotation) || 0,
+      tags: tagsByItem.get(row.id) || [],
+      collection_ids: collections.map(collection => collection.id),
+      collections,
+      file_path: row.file_source_path || (row.file_stored_name ? path.join(filesDir, row.file_stored_name) : null)
+    };
+  });
 }
 
 function compactItem(item: any) {
@@ -2723,7 +2786,7 @@ ipcMain.handle('dashboard:summary', () => {
     tags: (db.prepare('SELECT COUNT(*) AS total FROM tags').get() as { total: number }).total,
     relationships: (db.prepare('SELECT COUNT(*) AS total FROM item_relationships').get() as { total: number }).total,
     memories: (db.prepare('SELECT COUNT(*) AS total FROM memories').get() as { total: number }).total,
-    recentItems: (db.prepare('SELECT * FROM items ORDER BY updated_at DESC LIMIT 6').all() as any[]).map(row => compactItem(rowToItem(row)))
+    recentItems: rowsToItems(db.prepare('SELECT * FROM items ORDER BY updated_at DESC LIMIT 6').all() as any[]).map(compactItem)
   };
 });
 
@@ -2834,7 +2897,7 @@ ipcMain.handle('items:list', (_event, args: { search?: string; tag?: string; typ
     LIMIT ? OFFSET ?
   `).all(...params, limit, offset) as any[];
 
-  return rows.map(rowToItem).map(compactItem);
+  return rowsToItems(rows).map(compactItem);
 });
 
 ipcMain.handle('items:get', (_event, id: string) => {

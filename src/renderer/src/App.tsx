@@ -76,7 +76,7 @@ type SlashCommand = {
 };
 
 const maxVisibleTagSuggestions = 18;
-const libraryPageSize = 250;
+const libraryPageSize = 120;
 const searchPageSize = 250;
 const photoPageSize = 96;
 const memoryCanvasBaseWidth = 2400;
