@@ -1143,6 +1143,7 @@ export default function App() {
   const onboardingFolderInputRef = useRef<HTMLInputElement | null>(null);
   const memoryCanvasRef = useRef<HTMLElement | null>(null);
   const memoryCanvasZoomRef = useRef(1);
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
   const [dashboard, setDashboard] = useState<{ totalItems: number; notes: number; files: number; photos: number; videos: number; audio: number; googlePhotos: number; locations: number; favorites: number; collections: number; tags: number; relationships: number; memories: number; recentItems: VaultItem[] } | null>(null);
   const itemsListRef = useRef<HTMLDivElement | null>(null);
   const itemCardRefs = useRef(new Map<string, HTMLDivElement>());
@@ -3439,10 +3440,36 @@ export default function App() {
     setEditingItemId(null);
   }
 
-  function beginEditing() {
+  async function beginEditing() {
+    if (!selectedId) return;
+    let itemToEdit = selected;
+    try {
+      const fullItem = await window.vaultApi.getItem(selectedId);
+      if (fullItem) {
+        itemToEdit = fullItem;
+        selectedItemFullCacheRef.current.set(fullItem.id, fullItem);
+        setItems(current => current.map(item => item.id === fullItem.id ? fullItem : item));
+      }
+    } catch {
+      // Keep editing with the selected list item if the full refresh fails.
+    }
+    if (!itemToEdit) return;
+
     editSessionTouchedRef.current = false;
-    setEditingItemId(selectedId);
+    setDraftTitle(itemToEdit.title || '');
+    setDraftBody(itemToEdit.body || '');
+    setDraftTags((itemToEdit.tags || []).join(', '));
+    setDraftCollectionIds(itemToEdit.collection_ids || []);
+    setDraftPrivate(Boolean(itemToEdit.private));
+    setDraftCreatedAt(toDateTimeLocal(itemToEdit.created_at));
+    setEditingItemId(itemToEdit.id);
     setIsEditing(true);
+    setDetailTab(itemToEdit.type === 'note' ? 'notes' : detailTab);
+    setNoteEditorMode('edit');
+    requestAnimationFrame(() => {
+      titleInputRef.current?.focus();
+      titleInputRef.current?.select();
+    });
   }
 
   function focusLibraryList() {
@@ -6951,7 +6978,7 @@ export default function App() {
                     </button>
                   )}
 
-                  <button onClick={beginEditing} disabled={isSelectedEditing}>
+                  <button onClick={() => beginEditing().catch(err => setStatus(err.message))} disabled={isSelectedEditing}>
                     {isSelectedEditing ? 'Editing' : 'Edit'}
                   </button>
 
@@ -6978,6 +7005,7 @@ export default function App() {
                 </div>
 
                 <input
+                  ref={titleInputRef}
                   className="title-input"
                   value={draftTitle}
                   onChange={e => {
