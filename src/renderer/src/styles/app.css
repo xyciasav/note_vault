@@ -19,9 +19,8 @@ button, input, textarea { font: inherit; }
 .app-mode-header { grid-column: 2 / -1; grid-row: 1; display: grid; justify-items: center; align-content: center; gap: 8px; padding: 12px 28px 10px; background: #0f172a; text-align: center; border-bottom: 1px solid rgba(148, 163, 184, .20); box-shadow: 0 10px 28px rgba(0, 0, 0, .10); }
 .app-mode-title h1 { margin: 1px 0 2px; color: #f8fafc; font-size: clamp(26px, 3vw, 38px); line-height: .98; letter-spacing: -0.06em; display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
 .app-mode-title p { max-width: 620px; margin: 0 auto; color: #cbd5e1; font-size: 12px; line-height: 1.35; }
-.app-version-badge, .dashboard-version-badge { display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(147, 197, 253, .45); border-radius: 999px; background: rgba(37, 99, 235, .14); color: #dbeafe; font-weight: 800; letter-spacing: .02em; white-space: nowrap; }
+.app-version-badge { display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(147, 197, 253, .45); border-radius: 999px; background: rgba(37, 99, 235, .14); color: #dbeafe; font-weight: 800; letter-spacing: .02em; white-space: nowrap; }
 .app-version-badge { padding: 4px 8px; font-size: 12px; line-height: 1; letter-spacing: 0; }
-.dashboard-version-badge { margin-left: 8px; padding: 2px 7px; font-size: 11px; line-height: 1.2; }
 .dashboard-panel { grid-column: 2 / -1; grid-row: 2; overflow: auto; padding: clamp(14px, 2vw, 26px) clamp(16px, 3vw, 42px) 96px; background: #0f172a; }
 .dashboard-header, .dashboard-section-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
 .dashboard-header h1, .dashboard-section-header h2 { margin: 0; color: #f8fafc; }
@@ -2204,8 +2203,7 @@ body {
   color: #7c6f61;
 }
 
-.app-shell:not(.theme-dark) .app-version-badge,
-.app-shell:not(.theme-dark) .dashboard-version-badge {
+.app-shell:not(.theme-dark) .app-version-badge {
   border-color: #c7d2fe;
   background: #eff6ff;
   color: #1d4ed8;

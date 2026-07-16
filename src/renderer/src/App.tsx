@@ -5703,7 +5703,6 @@ export default function App() {
             <div>
               <span className="dashboard-kicker">
                 Home Dashboard
-                {appVersion && <span className="dashboard-version-badge">v{appVersion}</span>}
               </span>
               <h2>Your whole vault at a glance</h2>
               <p>Notes, photos, files, collections, relationships, and recent work in one place.</p>
