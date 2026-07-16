@@ -2191,6 +2191,11 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '2.0.3': [
+    'The app version is visible again in the top header and Home Dashboard so you can confirm the installed build after updating.',
+    'This release includes the 2.0.2 mode-aware Add Folder/upload behavior for Dashboard, Notes, Photos, and Music.',
+    'Dashboard mixed imports now mark photos, audio, videos, and files by type before review.'
+  ],
   '2.0.2': [
     'Dashboard upload and Add Folder now use smart mixed import, tagging photos, audio, and files by type.',
     'Notes, Photos, and Music uploads are mode-aware so each workspace only reviews files that belong there.',

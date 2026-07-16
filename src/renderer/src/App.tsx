@@ -5368,7 +5368,10 @@ export default function App() {
       <header className="app-mode-header">
         <div className="app-mode-title">
           <span className="dashboard-kicker">Private, local-first, yours</span>
-          <h1>Note Vault</h1>
+          <h1>
+            Note Vault
+            {appVersion && <span className="app-version-badge">v{appVersion}</span>}
+          </h1>
           <p>
             {appView === 'dashboard'
               ? 'Your whole local vault: notes, media, files, collections, and connections.'
@@ -5472,7 +5475,10 @@ export default function App() {
         <main className="dashboard-panel">
           <div className="content-frame-heading">
             <div>
-              <span className="dashboard-kicker">Home Dashboard</span>
+              <span className="dashboard-kicker">
+                Home Dashboard
+                {appVersion && <span className="dashboard-version-badge">v{appVersion}</span>}
+              </span>
               <h2>Your whole vault at a glance</h2>
               <p>Notes, photos, files, collections, relationships, and recent work in one place.</p>
             </div>
