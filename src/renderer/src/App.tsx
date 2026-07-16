@@ -45,6 +45,7 @@ type SearchSort = 'created' | 'updated' | 'title';
 type LibraryViewMode = 'cards' | 'compact' | 'grid';
 type DetailTab = 'preview' | 'notes' | 'info';
 type NoteEditorMode = 'edit' | 'preview' | 'split';
+type ImportIntent = 'auto' | 'note' | 'photo' | 'music';
 type VaultCollection = { id: string; name: string; mode?: string; parent_id?: string; created_at?: string; count?: number; child_count?: number; note_count?: number; image_count?: number; video_count?: number; audio_count?: number; document_count?: number };
 type OnboardingStep = 'welcome' | 'navigation' | 'connect' | 'start';
 type OnboardingStartChoice = 'manual' | 'wizard';
@@ -94,6 +95,12 @@ const onboardingSteps: OnboardingStep[] = ['welcome', 'navigation', 'connect', '
 const imagePreviewExts = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg']);
 const videoPreviewExts = new Set(['.mp4', '.webm', '.mov', '.m4v', '.ogv']);
 const audioPreviewExts = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a', '.ogg', '.oga', '.opus', '.wma', '.aiff', '.aif']);
+const noteImportExts = new Set([
+  '.md', '.markdown', '.txt', '.rtf', '.pdf', '.doc', '.docx', '.odt',
+  '.csv', '.tsv', '.xls', '.xlsx', '.ppt', '.pptx', '.json', '.xml',
+  '.html', '.htm', '.css', '.js', '.ts', '.tsx', '.jsx', '.py', '.ps1',
+  '.sh', '.bat', '.ini', '.yml', '.yaml', '.log'
+]);
 
 type ImportDraft = ImportPreview & {
   importId: string;
@@ -150,6 +157,43 @@ function isVideoItem(item: VaultItem | null) {
 
 function isAudioItem(item: VaultItem | null) {
   return Boolean(item?.file_ext && audioPreviewExts.has(item.file_ext.toLowerCase()));
+}
+
+function importFileExt(file: { sourcePath: string; relativePath?: string; fileName?: string; fileExt?: string }) {
+  const existing = file.fileExt || '';
+  if (existing) return existing.startsWith('.') ? existing.toLowerCase() : `.${existing.toLowerCase()}`;
+  const name = file.fileName || file.relativePath || file.sourcePath || '';
+  const cleanName = name.split(/[\\/]/).pop() || name;
+  const dotIndex = cleanName.lastIndexOf('.');
+  return dotIndex >= 0 ? cleanName.slice(dotIndex).toLowerCase() : '';
+}
+
+function classifyImportIntent(file: { sourcePath: string; relativePath?: string; fileName?: string; fileExt?: string }): ImportIntent {
+  const ext = importFileExt(file);
+  if (imagePreviewExts.has(ext) || videoPreviewExts.has(ext)) return 'photo';
+  if (audioPreviewExts.has(ext)) return 'music';
+  return 'note';
+}
+
+function importIntentAcceptsFile(intent: ImportIntent, file: { sourcePath: string; relativePath?: string; fileName?: string; fileExt?: string }) {
+  if (intent === 'auto') return true;
+  return classifyImportIntent(file) === intent;
+}
+
+function classificationTagsForImport(file: { sourcePath: string; relativePath?: string; fileName?: string; fileExt?: string }) {
+  const ext = importFileExt(file);
+  if (imagePreviewExts.has(ext)) return ['photo', 'image'];
+  if (videoPreviewExts.has(ext)) return ['photo', 'video'];
+  if (audioPreviewExts.has(ext)) return ['music', 'audio'];
+  if (noteImportExts.has(ext)) return ['notes', 'file'];
+  return ['file'];
+}
+
+function importIntentLabel(intent: ImportIntent) {
+  if (intent === 'photo') return 'photo/video';
+  if (intent === 'music') return 'audio';
+  if (intent === 'note') return 'note/file';
+  return 'vault';
 }
 
 function imageRotationStyle(item: VaultItem | null): React.CSSProperties | undefined {
@@ -1082,6 +1126,7 @@ export default function App() {
   const importDraftsRef = useRef<ImportDraft[]>([]);
   const pendingWatchedReviewFilesRef = useRef<WatchedFolderFile[]>([]);
   const pendingWatchedScanFolderIdRef = useRef<string | undefined>(undefined);
+  const pendingImportIntentRef = useRef<ImportIntent>('auto');
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const noteEditorRef = useRef<HTMLTextAreaElement | null>(null);
   const quickNoteTagPickerRef = useRef<HTMLDetailsElement | null>(null);
@@ -2567,13 +2612,26 @@ export default function App() {
     setImportWizardScope(scope);
   }
 
+  function focusedImportIntent() {
+    if (workspaceMode === 'photo') return 'photo';
+    if (workspaceMode === 'music') return 'music';
+    return 'note';
+  }
+
+  function openFolderPicker(intent: ImportIntent = focusedImportIntent()) {
+    pendingImportIntentRef.current = intent;
+    window.setTimeout(() => onboardingFolderInputRef.current?.click(), 50);
+  }
+
   function chooseImportPrompt(prompt: OnboardingImportChoice, returnScope: ImportWizardScope = importWizardScope) {
     setCompletedImportChoices(current => new Set(current).add(prompt));
     if (prompt === 'files') {
+      pendingImportIntentRef.current = returnScope === 'photo' ? 'photo' : returnScope === 'journal' ? 'note' : 'auto';
       window.setTimeout(() => onboardingFilesInputRef.current?.click(), 50);
       return;
     }
     if (prompt === 'folder') {
+      pendingImportIntentRef.current = returnScope === 'photo' ? 'photo' : returnScope === 'journal' ? 'note' : 'auto';
       window.setTimeout(() => onboardingFolderInputRef.current?.click(), 50);
       return;
     }
@@ -3348,13 +3406,21 @@ export default function App() {
     return draft.collectionNameDraft.trim();
   }
 
-  async function prepareImportEntries(fileInputs: (WatchedFolderFile | { sourcePath: string; relativePath?: string })[], options?: { watchedFolderId?: string }) {
-    if (fileInputs.length === 0) {
+  async function prepareImportEntries(fileInputs: (WatchedFolderFile | { sourcePath: string; relativePath?: string })[], options?: { watchedFolderId?: string; intent?: ImportIntent }) {
+    const intent = options?.intent || 'auto';
+    const originalCount = fileInputs.length;
+    const acceptedInputs = fileInputs.filter(file => importIntentAcceptsFile(intent, file));
+    const skippedCount = originalCount - acceptedInputs.length;
+
+    if (acceptedInputs.length === 0) {
+      if (originalCount > 0 && intent !== 'auto') {
+        throw new Error(`No ${importIntentLabel(intent)} files were found in that selection.`);
+      }
       throw new Error('Could not read file path from Electron.');
     }
 
     setIsPreparingImport(true);
-    pendingWatchedReviewFilesRef.current = fileInputs.filter((file): file is WatchedFolderFile =>
+    pendingWatchedReviewFilesRef.current = acceptedInputs.filter((file): file is WatchedFolderFile =>
       'watchedFolderId' in file && Boolean(file.watchedFolderId)
     );
     pendingWatchedScanFolderIdRef.current = options?.watchedFolderId;
@@ -3362,19 +3428,19 @@ export default function App() {
     setImportProgress({
       phase: isWatchedScan ? 'Preparing watched files' : 'Preparing files',
       current: isWatchedScan ? 1 : 0,
-      total: isWatchedScan ? 1 : fileInputs.length
+      total: isWatchedScan ? 1 : acceptedInputs.length
     });
     setStatus(isWatchedScan
       ? 'Preparing watched-folder files for review...'
-      : `Preparing ${fileInputs.length} file${fileInputs.length === 1 ? '' : 's'} for review...`
+      : `Preparing ${acceptedInputs.length} ${importIntentLabel(intent)} file${acceptedInputs.length === 1 ? '' : 's'} for review${skippedCount ? ` (${skippedCount} skipped)` : ''}...`
     );
     try {
-      const previewMeta = new Map(fileInputs.map(file => [file.sourcePath, file]));
-      const previews = await window.vaultApi.previewImport(fileInputs);
+      const previewMeta = new Map(acceptedInputs.map(file => [file.sourcePath, file]));
+      const previews = await window.vaultApi.previewImport(acceptedInputs);
       setImportProgress({
         phase: 'Ready for review',
         current: isWatchedScan ? 1 : previews.length,
-        total: isWatchedScan ? 1 : fileInputs.length
+        total: isWatchedScan ? 1 : acceptedInputs.length
       });
       setImportDrafts(previews.map((preview, index) => ({
         ...preview,
@@ -3383,9 +3449,12 @@ export default function App() {
         importId: `${preview.sourcePath}-${index}`,
         selected: preview.duplicateKind !== 'same-file',
         titleDraft: preview.title,
-        tagsDraft: [...new Set(preview.suggestedTags.filter(tag =>
-          allowNewImportTagSuggestions || allTags.some(existing => existing.toLowerCase() === tag.toLowerCase())
-        ))],
+        tagsDraft: [...new Set([
+          ...classificationTagsForImport(preview),
+          ...preview.suggestedTags.filter(tag =>
+            allowNewImportTagSuggestions || allTags.some(existing => existing.toLowerCase() === tag.toLowerCase())
+          )
+        ])],
         collectionNameDraft: selectedCollectionId
           ? collections.find(collection => collection.id === selectedCollectionId)?.name || ''
           : preview.suggestedCollectionName
@@ -3396,13 +3465,13 @@ export default function App() {
         setStatus('No readable watched-folder files needed review. Marked this scan handled.');
         return;
       }
-      setStatus(`Review ${previews.length} file${previews.length === 1 ? '' : 's'} before importing.`);
+      setStatus(`Review ${previews.length} file${previews.length === 1 ? '' : 's'} before importing${skippedCount ? `. Skipped ${skippedCount} unrelated file${skippedCount === 1 ? '' : 's'}` : ''}.`);
     } finally {
       setIsPreparingImport(false);
     }
   }
 
-  async function prepareImport(files: File[]) {
+  async function prepareImport(files: File[], intent: ImportIntent = 'auto') {
     if (files.length === 0) return;
 
     const fileInputs = files.map(file => ({
@@ -3410,7 +3479,7 @@ export default function App() {
       relativePath: (file as any).webkitRelativePath || file.name
     })).filter(file => file.sourcePath);
 
-    await prepareImportEntries(fileInputs);
+    await prepareImportEntries(fileInputs, { intent });
   }
 
   async function uploadDraft(draft: ImportDraft, collectionIds: string[]) {
@@ -3594,7 +3663,7 @@ export default function App() {
     }
   }
 
-  async function onFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+  async function onFileInput(e: React.ChangeEvent<HTMLInputElement>, explicitIntent?: ImportIntent) {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
     if (!(await confirmSaveDirtyChanges())) {
@@ -3603,11 +3672,14 @@ export default function App() {
     }
 
     try {
-      await prepareImport(files);
+      const intent = explicitIntent || pendingImportIntentRef.current || 'auto';
+      pendingImportIntentRef.current = 'auto';
+      await prepareImport(files, intent);
     } catch (err: any) {
       setImportProgress(null);
       setStatus(`Upload failed: ${err.message}`);
     } finally {
+      pendingImportIntentRef.current = 'auto';
       e.target.value = '';
     }
   }
@@ -4747,6 +4819,7 @@ export default function App() {
                     } else if (starterImportPrompt === 'google') {
                       window.setTimeout(() => importGooglePhotosTakeout().catch(err => setStatus(err.message)), 50);
                     } else {
+                      pendingImportIntentRef.current = starterReturnScope === 'photo' ? 'photo' : starterReturnScope === 'journal' ? 'note' : 'auto';
                       window.setTimeout(() => onboardingFilesInputRef.current?.click(), 50);
                     }
                   }}
@@ -4768,6 +4841,7 @@ export default function App() {
                         window.setTimeout(() => importNotionExport('folder').catch(err => setStatus(err.message)), 50);
                       } else {
                         setStarterImportPrompt(null);
+                        pendingImportIntentRef.current = starterReturnScope === 'photo' ? 'photo' : starterReturnScope === 'journal' ? 'note' : 'auto';
                         window.setTimeout(() => onboardingFolderInputRef.current?.click(), 50);
                       }
                     }}
@@ -5077,12 +5151,12 @@ export default function App() {
 
             <label className="upload-button">
               <Upload size={18} /> Upload Files
-              <input type="file" multiple onChange={onFileInput} />
+              <input type="file" multiple onChange={event => onFileInput(event, 'note')} />
             </label>
 
             <label className="upload-button">
               <FolderOpen size={18} /> Add Folder
-              <input type="file" multiple onChange={onFileInput} {...({ webkitdirectory: '', directory: '' } as any)} />
+              <input type="file" multiple onChange={event => onFileInput(event, 'note')} {...({ webkitdirectory: '', directory: '' } as any)} />
             </label>
           </div>
         )}
@@ -5098,7 +5172,7 @@ export default function App() {
             </button>
             <label className="upload-button">
               <Upload size={18} /> Upload Photos
-              <input type="file" multiple accept="image/*,video/*" onChange={onFileInput} />
+              <input type="file" multiple accept="image/*,video/*" onChange={event => onFileInput(event, 'photo')} />
             </label>
           </div>
         )}
@@ -5358,7 +5432,7 @@ export default function App() {
               </button>
               <label className="dashboard-card dashboard-upload-card">
                 <span>Add</span><strong>Upload</strong><small>Add images or videos from your computer.</small>
-                <input type="file" multiple accept="image/*,video/*" onChange={onFileInput} />
+                <input type="file" multiple accept="image/*,video/*" onChange={event => onFileInput(event, 'photo')} />
               </label>
               <button className="dashboard-card" onClick={() => openPhotoSearch()}>
                 <span>Locations Found</span><strong>{dashboard?.locations ?? 0}</strong><small>Photos/videos with location metadata text available.</small>
@@ -5471,8 +5545,11 @@ export default function App() {
               <span>Create</span><strong>New Note</strong><small>Capture lyrics, thoughts, theory, plans, or anything else.</small>
             </button>
             <label className="dashboard-card action-card dashboard-upload-card">
-              <span>Add</span><strong>Upload Something</strong><small>Add notes, PDFs, docs, images, audio, videos, references, or keepsakes.</small><input type="file" multiple onChange={onFileInput} />
+              <span>Add</span><strong>Upload Something</strong><small>Add anything. Note Vault will tag photos, audio, and files by type.</small><input type="file" multiple onChange={event => onFileInput(event, 'auto')} />
             </label>
+            <button className="dashboard-card action-card" onClick={() => openFolderPicker('auto')}>
+              <span>Add</span><strong>Add Folder</strong><small>Bring in a mixed folder. Photos, music, and files get marked automatically.</small>
+            </button>
             <button className="dashboard-card action-card" onClick={() => changeAppView('relationships')}>
               <span>Connect</span><strong>Relationships</strong><small>Open linked notes, photos, files, and audio threads.</small>
             </button>
@@ -5555,7 +5632,8 @@ export default function App() {
             <section className="dashboard-cards dashboard-action-grid">
               <button className="dashboard-card action-card" onClick={() => changeAppView('search')}><span>Find</span><strong>Search</strong><small>Search text, tags, collections, and files.</small></button>
               <button className="dashboard-card action-card" onClick={() => openImportWizard('journal')}><span>Import</span><strong>Import Wizard</strong><small>Bring in Notion exports or OneNote notebooks.</small></button>
-              <label className="dashboard-card action-card dashboard-upload-card"><span>Add</span><strong>Upload Something</strong><small>Add notes, PDFs, docs, images, audio, videos, or references.</small><input type="file" multiple onChange={onFileInput} /></label>
+              <label className="dashboard-card action-card dashboard-upload-card"><span>Add</span><strong>Upload Files</strong><small>Add notes, PDFs, docs, code, text, or references.</small><input type="file" multiple onChange={event => onFileInput(event, 'note')} /></label>
+              <button className="dashboard-card action-card" onClick={() => openFolderPicker('note')}><span>Add</span><strong>Add Folder</strong><small>Add a folder of notes, docs, code, PDFs, or references.</small></button>
             </section>
             <section className="quick-note-panel">
               <div className="dashboard-section-label quick-note-label"><span>Quick note</span><small>Write and save without opening the full library.</small></div>
@@ -5661,7 +5739,8 @@ export default function App() {
               <button className="dashboard-card action-card" onClick={() => openPhotoView()}><span>Browse</span><strong>Media Library</strong><small>Show only photos and videos, paged for performance.</small></button>
               <button className="dashboard-card action-card" onClick={() => openPhotoSearch()}><span>Find</span><strong>Photo Search</strong><small>Search media by text, tags, collections, or filename.</small></button>
               <button className="dashboard-card action-card" onClick={() => openImportWizard('photo')} disabled={isImportingPhotos}><span>Import</span><strong>Import Wizard</strong><small>Choose Google Takeout, iCloud media, or local photo folders.</small></button>
-              <label className="dashboard-card action-card dashboard-upload-card"><span>Add</span><strong>Upload Media</strong><small>Add image and video files from your computer.</small><input type="file" multiple accept="image/*,video/*" onChange={onFileInput} /></label>
+              <label className="dashboard-card action-card dashboard-upload-card"><span>Add</span><strong>Upload Media</strong><small>Add image and video files from your computer.</small><input type="file" multiple accept="image/*,video/*" onChange={event => onFileInput(event, 'photo')} /></label>
+              <button className="dashboard-card action-card" onClick={() => openFolderPicker('photo')}><span>Add</span><strong>Add Folder</strong><small>Add a folder of photos/videos and review before saving.</small></button>
             </section>
             <div className="dashboard-section-label"><span>Photo organization</span><small>Ways to connect media.</small></div>
             <section className="dashboard-cards dashboard-link-grid">
@@ -5680,7 +5759,8 @@ export default function App() {
             </section>
             <div className="dashboard-section-label"><span>Music actions</span><small>Bring in music and play it while working.</small></div>
             <section className="dashboard-cards dashboard-action-grid">
-              <label className="dashboard-card action-card dashboard-upload-card"><span className="card-emoji">⬆️</span><span>Add</span><strong>Upload Something</strong><small>Add audio, notes, PDFs, images, videos, or references.</small><input type="file" multiple onChange={onFileInput} /></label>
+              <button className="dashboard-card action-card" onClick={() => openFolderPicker('music')}><span>Add</span><strong>Add Folder</strong><small>Add a folder of tracks, samples, demos, or audio clips.</small></button>
+              <label className="dashboard-card action-card dashboard-upload-card"><span className="card-emoji">⬆️</span><span>Add</span><strong>Upload Audio</strong><small>Add tracks, samples, demos, WAVs, MP3s, FLACs, or voice clips.</small><input type="file" multiple accept="audio/*,.flac,.m4a,.ogg,.opus,.wma,.aiff,.aif" onChange={event => onFileInput(event, 'music')} /></label>
               <button className="dashboard-card action-card" onClick={openMusicLibrary}><span className="card-emoji">🎚️</span><span>Browse</span><strong>Music Library</strong><small>Open playable audio files only.</small></button>
               <button className="dashboard-card action-card" onClick={() => { setSearchType('file'); setAppView('search'); }}><span className="card-emoji">🔎</span><span>Find</span><strong>Music Search</strong><small>Search tracks by title, tags, notes, or filename.</small></button>
             </section>
