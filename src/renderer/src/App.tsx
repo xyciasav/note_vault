@@ -1161,6 +1161,7 @@ export default function App() {
   const [relationships, setRelationships] = useState<VaultRelationship[]>([]);
   const [allRelationships, setAllRelationships] = useState<VaultRelationshipSummary[]>([]);
   const [relationshipPageView, setRelationshipPageView] = useState<'hubs' | 'manage'>('hubs');
+  const [selectedRelationshipHubId, setSelectedRelationshipHubId] = useState<string | null>(null);
   const [memories, setMemories] = useState<VaultMemory[]>([]);
   const [activeMemory, setActiveMemory] = useState<VaultMemoryDetail | null>(null);
   const [memorySuggestions, setMemorySuggestions] = useState<VaultMemorySuggestion[]>([]);
@@ -1643,6 +1644,71 @@ export default function App() {
     return [...hubs.values()]
       .sort((left, right) => right.count - left.count || new Date(right.latest).getTime() - new Date(left.latest).getTime());
   }, [allRelationships]);
+
+  const selectedRelationshipHub = useMemo(
+    () => relationshipHubs.find(hub => hub.item.id === selectedRelationshipHubId) || relationshipHubs[0] || null,
+    [relationshipHubs, selectedRelationshipHubId]
+  );
+
+  const selectedRelationshipMap = useMemo(() => {
+    if (!selectedRelationshipHub) return null;
+    const hubId = selectedRelationshipHub.item.id;
+    const direct = new Map<string, {
+      item: VaultRelationshipSummary['source'];
+      relationship: VaultRelationshipSummary;
+    }>();
+    const adjacency = new Map<string, Map<string, {
+      item: VaultRelationshipSummary['source'];
+      relationship: VaultRelationshipSummary;
+    }>>();
+
+    const ensureNode = (id: string) => {
+      if (!adjacency.has(id)) adjacency.set(id, new Map());
+      return adjacency.get(id)!;
+    };
+
+    allRelationships.forEach(relationship => {
+      ensureNode(relationship.source.id).set(relationship.target.id, {
+        item: relationship.target,
+        relationship
+      });
+      ensureNode(relationship.target.id).set(relationship.source.id, {
+        item: relationship.source,
+        relationship
+      });
+    });
+
+    adjacency.get(hubId)?.forEach((value, id) => direct.set(id, value));
+
+    const nearby = new Map<string, {
+      item: VaultRelationshipSummary['source'];
+      via: VaultRelationshipSummary['source'];
+      firstRelationship: VaultRelationshipSummary;
+      secondRelationship: VaultRelationshipSummary;
+    }>();
+
+    direct.forEach((directValue, directId) => {
+      adjacency.get(directId)?.forEach((secondValue, secondId) => {
+        if (secondId === hubId || direct.has(secondId) || nearby.has(secondId)) return;
+        nearby.set(secondId, {
+          item: secondValue.item,
+          via: directValue.item,
+          firstRelationship: directValue.relationship,
+          secondRelationship: secondValue.relationship
+        });
+      });
+    });
+
+    return {
+      hub: selectedRelationshipHub.item,
+      direct: [...direct.values()].sort((left, right) =>
+        new Date(right.relationship.created_at).getTime() - new Date(left.relationship.created_at).getTime()
+      ),
+      nearby: [...nearby.values()].sort((left, right) =>
+        new Date(right.secondRelationship.created_at).getTime() - new Date(left.secondRelationship.created_at).getTime()
+      )
+    };
+  }, [allRelationships, selectedRelationshipHub]);
 
   function libraryContentArgs(filter: LibraryContentFilter, fallbackType: TypeFilter) {
     if (workspaceMode === 'music') return { type: 'file' as TypeFilter, audioOnly: true };
@@ -6568,13 +6634,70 @@ export default function App() {
 
           {relationshipPageView === 'hubs' && relationshipHubs.length > 0 && (
             <>
+              {selectedRelationshipMap && (
+                <section className="relationship-map-panel">
+                  <div className="relationship-map-heading">
+                    <div>
+                      <span className="relationship-type-pill">{selectedRelationshipMap.hub.type}</span>
+                      <h3>{selectedRelationshipMap.hub.title || selectedRelationshipMap.hub.fileName || 'Untitled'}</h3>
+                      <p>Direct links are intentional relationships. Nearby links are connected through one shared item, but are not direct relationships yet.</p>
+                    </div>
+                    <button type="button" className="relationship-open-hub" onClick={() => openRelationshipItem(selectedRelationshipMap.hub.id)}>
+                      Open item
+                    </button>
+                  </div>
+
+                  <div className="relationship-map-columns">
+                    <div className="relationship-map-column">
+                      <div className="dashboard-section-label relationships-section-label">
+                        <span>Direct relationships</span>
+                        <small>{selectedRelationshipMap.direct.length} item{selectedRelationshipMap.direct.length === 1 ? '' : 's'} directly connected.</small>
+                      </div>
+                      <div className="relationship-path-list">
+                        {selectedRelationshipMap.direct.length === 0 ? (
+                          <div className="relationship-path-empty">No direct relationships yet.</div>
+                        ) : selectedRelationshipMap.direct.slice(0, 8).map(connection => (
+                          <button key={connection.item.id} type="button" className="relationship-path-card" onClick={() => openRelationshipItem(connection.item.id)}>
+                            <strong>{connection.item.title || connection.item.fileName || 'Untitled'}</strong>
+                            <span>Direct - {connection.relationship.note || 'No note added'}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="relationship-map-column">
+                      <div className="dashboard-section-label relationships-section-label">
+                        <span>Nearby through another item</span>
+                        <small>{selectedRelationshipMap.nearby.length} possible connection{selectedRelationshipMap.nearby.length === 1 ? '' : 's'} two steps away.</small>
+                      </div>
+                      <div className="relationship-path-list">
+                        {selectedRelationshipMap.nearby.length === 0 ? (
+                          <div className="relationship-path-empty">No second-hop suggestions yet.</div>
+                        ) : selectedRelationshipMap.nearby.slice(0, 8).map(connection => (
+                          <button key={connection.item.id} type="button" className="relationship-path-card relationship-path-suggested" onClick={() => openRelationshipItem(connection.item.id)}>
+                            <strong>{connection.item.title || connection.item.fileName || 'Untitled'}</strong>
+                            <span>
+                              Path: {selectedRelationshipMap.hub.title || selectedRelationshipMap.hub.fileName || 'Hub'} - {connection.via.title || connection.via.fileName || 'bridge'} - {connection.item.title || connection.item.fileName || 'item'}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              )}
+
               <div className="dashboard-section-label relationships-section-label">
                 <span>Relationship hubs</span>
-                <small>Every connected item as a hub, sorted by strongest connection count.</small>
+                <small>Select a hub to inspect direct links and nearby paths, or open it to edit the item.</small>
               </div>
               <section className="relationship-hub-grid">
                 {relationshipHubs.map(hub => (
-                  <article key={hub.item.id} className="relationship-hub-card">
+                  <article
+                    key={hub.item.id}
+                    className={`relationship-hub-card ${selectedRelationshipMap?.hub.id === hub.item.id ? 'active' : ''}`}
+                    onClick={() => setSelectedRelationshipHubId(hub.item.id)}
+                  >
                     <div>
                       <span className="relationship-type-pill">{hub.item.type}</span>
                       <h3>{hub.item.title || hub.item.fileName || 'Untitled'}</h3>
@@ -6582,13 +6705,19 @@ export default function App() {
                     </div>
                     <div className="relationship-hub-links">
                       {hub.related.slice(0, 4).map(item => (
-                        <button key={item.id} type="button" onClick={() => openRelationshipItem(item.id)}>
+                        <button key={item.id} type="button" onClick={event => {
+                          event.stopPropagation();
+                          openRelationshipItem(item.id);
+                        }}>
                           {item.title || item.fileName || 'Untitled'}
                         </button>
                       ))}
                     </div>
-                    <button type="button" className="relationship-open-hub" onClick={() => openRelationshipItem(hub.item.id)}>
-                      Open hub
+                    <button type="button" className="relationship-open-hub" onClick={event => {
+                      event.stopPropagation();
+                      openRelationshipItem(hub.item.id);
+                    }}>
+                      Open item
                     </button>
                   </article>
                 ))}
