@@ -107,6 +107,7 @@ type ImportDraft = ImportPreview & {
   selected: boolean;
   titleDraft: string;
   tagsDraft: string[];
+  collectionIdDraft: string;
   collectionNameDraft: string;
 };
 
@@ -194,6 +195,13 @@ function importIntentLabel(intent: ImportIntent) {
   if (intent === 'music') return 'audio';
   if (intent === 'note') return 'note/file';
   return 'vault';
+}
+
+function collectionMatchesWorkspaceMode(collection: VaultCollection, mode: WorkspaceMode) {
+  const collectionMode = collection.mode || '';
+  if (mode === 'music') return collectionMode === 'music' || Number(collection.audio_count || 0) > 0;
+  if (mode === 'photo') return collectionMode === 'photo' || Number(collection.image_count || 0) + Number(collection.video_count || 0) > 0;
+  return collectionMode === '' || collectionMode === 'note' || Number(collection.note_count || 0) + Number(collection.document_count || 0) > 0;
 }
 
 function imageRotationStyle(item: VaultItem | null): React.CSSProperties | undefined {
@@ -1037,6 +1045,7 @@ export default function App() {
   const [importFilter, setImportFilter] = useState<ImportFilter>('all');
   const [importBulkTag, setImportBulkTag] = useState('');
   const [importBulkCollection, setImportBulkCollection] = useState('');
+  const [importBulkNewCollection, setImportBulkNewCollection] = useState('');
 
   const [draftTitle, setDraftTitle] = useState('');
   const [draftBody, setDraftBody] = useState('');
@@ -1278,11 +1287,8 @@ export default function App() {
   }), [collections, collectionSort]);
 
   const visibleCollections = useMemo(() => sortedCollections.filter(collection => {
-    const mode = collection.mode || '';
     if (collection.parent_id) return false;
-    if (workspaceMode === 'music') return mode === 'music';
-    if (workspaceMode === 'photo') return mode === 'photo' || Number(collection.image_count || 0) + Number(collection.video_count || 0) > 0;
-    return mode === '' || mode === 'note' || Number(collection.note_count || 0) + Number(collection.document_count || 0) > 0;
+    return collectionMatchesWorkspaceMode(collection, workspaceMode);
   }), [sortedCollections, workspaceMode]);
 
   const collectionPageParent = useMemo(
@@ -1291,13 +1297,20 @@ export default function App() {
   );
 
   const collectionPageCollections = useMemo(() => sortedCollections.filter(collection => {
-    const mode = collection.mode || '';
     const parentMatches = collectionPageParentId ? collection.parent_id === collectionPageParentId : !collection.parent_id;
     if (!parentMatches) return false;
-    if (workspaceMode === 'music') return mode === 'music';
-    if (workspaceMode === 'photo') return mode === 'photo' || Number(collection.image_count || 0) + Number(collection.video_count || 0) > 0;
-    return mode === '' || mode === 'note' || Number(collection.note_count || 0) + Number(collection.document_count || 0) > 0;
+    return collectionMatchesWorkspaceMode(collection, workspaceMode);
   }), [collectionPageParentId, sortedCollections, workspaceMode]);
+
+  const workspaceCollectionOptions = useMemo(
+    () => sortedCollections.filter(collection => collectionMatchesWorkspaceMode(collection, workspaceMode)),
+    [sortedCollections, workspaceMode]
+  );
+
+  const importCollectionOptions = useMemo(
+    () => appView === 'dashboard' || showLibraryContentFilter ? sortedCollections : workspaceCollectionOptions,
+    [appView, showLibraryContentFilter, sortedCollections, workspaceCollectionOptions]
+  );
 
   const noteItems = appView === 'notes' ? journalNotes : items.filter(item => item.type === 'note');
 
@@ -1497,6 +1510,11 @@ export default function App() {
     && !selectedCollectionId
     && !libraryFavoriteOnly;
 
+  const bulkCollectionOptions = useMemo(
+    () => canShowLibraryContentFilter ? sortedCollections : workspaceCollectionOptions,
+    [canShowLibraryContentFilter, sortedCollections, workspaceCollectionOptions]
+  );
+
   const activeCollectionParent = useMemo(
     () => activeCollection?.parent_id ? collections.find(collection => collection.id === activeCollection.parent_id) || null : null,
     [activeCollection, collections]
@@ -1585,6 +1603,11 @@ export default function App() {
     [activeMemory]
   );
 
+  const activeMemoryItemIds = useMemo(
+    () => new Set(activeMemory?.items.map(memoryItem => memoryItem.item.id) || []),
+    [activeMemory]
+  );
+
   const selectedMemoryCount = selectedMemoryItemIds.size + selectedMemoryDecorationIds.size;
 
   const relationshipHubs = useMemo(() => {
@@ -1646,6 +1669,8 @@ export default function App() {
       ? (overrides?.contentFilter ?? libraryContentFilter)
       : workspaceMode === 'music' && appView === 'library'
         ? 'audio'
+        : workspaceMode === 'photo' && appView === 'library'
+        ? 'media'
         : 'all';
     const contentArgs = libraryContentArgs(
       effectiveContentFilter,
@@ -1784,6 +1809,47 @@ export default function App() {
     const memory = await window.vaultApi.removeItemFromMemory({ memoryId: activeMemory.id, itemId });
     setActiveMemory(memory);
     await refreshMemories();
+  }
+
+  async function saveActiveMemoryRelationships() {
+    if (!activeMemory) return;
+    const candidates = activeMemory.items.map(memoryItem => memoryItem.item);
+    if (candidates.length < 2) {
+      setStatus('Add at least two items before saving Memory relationships.');
+      return;
+    }
+
+    const hub =
+      candidates.find(item => item.type === 'note') ||
+      candidates.find(item => !isAudioItem(item)) ||
+      candidates[0];
+    const relatedItems = candidates.filter(item => item.id !== hub.id);
+    if (!relatedItems.length) return;
+
+    const hubTitle = hub.title || hub.file_name || 'this item';
+    if (!confirm(`Save this Memory as relationships?\n\n"${hubTitle}" will be connected to ${relatedItems.length} other item${relatedItems.length === 1 ? '' : 's'} in "${activeMemory.title}".`)) {
+      return;
+    }
+
+    let saved = 0;
+    let skipped = 0;
+    for (const relatedItem of relatedItems) {
+      try {
+        await window.vaultApi.addRelationship({
+          itemId: hub.id,
+          relatedItemId: relatedItem.id,
+          note: `Connected through Memory: ${activeMemory.title}`
+        });
+        saved += 1;
+      } catch {
+        skipped += 1;
+      }
+    }
+    await refreshAllRelationships();
+    await refreshDashboardSummary();
+    setStatus(saved > 0
+      ? `Saved ${saved} relationship${saved === 1 ? '' : 's'} from this Memory${skipped ? ` (${skipped} already existed or could not be saved)` : ''}.`
+      : 'No new relationships were saved from this Memory.');
   }
 
   async function saveMemoryItemPosition(itemId: string, x: number, y: number) {
@@ -2555,15 +2621,19 @@ export default function App() {
   async function openCollectionLibrary(collectionId: string) {
     if (!(await confirmSaveDirtyChanges())) return;
     const collection = collections.find(entry => entry.id === collectionId);
+    const targetMode: WorkspaceMode = collection?.mode === 'music'
+      ? 'music'
+      : collection?.mode === 'photo'
+      ? 'photo'
+      : workspaceMode;
     setSelectedCollectionId(collectionId);
     setSelectedId(null);
-    setTypeFilter(workspaceMode === 'music' ? 'file' : 'all');
-    setLibraryContentFilter(workspaceMode === 'music' ? 'audio' : 'all');
+    setTypeFilter(targetMode === 'music' || targetMode === 'photo' ? 'file' : 'all');
+    setLibraryContentFilter(targetMode === 'music' ? 'audio' : targetMode === 'photo' ? 'media' : 'all');
     setShowLibraryContentFilter(false);
     setLibraryFavoriteOnly(false);
     setSearch('');
-    if (collection?.mode === 'music') setWorkspaceMode('music');
-    if (collection?.mode === 'photo') setWorkspaceMode('photo');
+    setWorkspaceMode(targetMode);
     setAppView('library');
   }
 
@@ -3406,6 +3476,13 @@ export default function App() {
     return draft.collectionNameDraft.trim();
   }
 
+  function collectionLabelForDraft(draft: ImportDraft) {
+    if (draft.collectionIdDraft) {
+      return collections.find(collection => collection.id === draft.collectionIdDraft)?.name || 'Selected collection';
+    }
+    return collectionNameForDraft(draft);
+  }
+
   async function prepareImportEntries(fileInputs: (WatchedFolderFile | { sourcePath: string; relativePath?: string })[], options?: { watchedFolderId?: string; intent?: ImportIntent }) {
     const intent = options?.intent || 'auto';
     const originalCount = fileInputs.length;
@@ -3455,8 +3532,15 @@ export default function App() {
             allowNewImportTagSuggestions || allTags.some(existing => existing.toLowerCase() === tag.toLowerCase())
           )
         ])],
-        collectionNameDraft: selectedCollectionId
-          ? collections.find(collection => collection.id === selectedCollectionId)?.name || ''
+        collectionIdDraft: selectedCollectionId || importCollectionOptions.find(collection =>
+          preview.suggestedCollectionName &&
+          collection.name.toLowerCase() === preview.suggestedCollectionName.toLowerCase()
+        )?.id || '',
+        collectionNameDraft: selectedCollectionId || importCollectionOptions.some(collection =>
+          preview.suggestedCollectionName &&
+          collection.name.toLowerCase() === preview.suggestedCollectionName.toLowerCase()
+        )
+          ? ''
           : preview.suggestedCollectionName
       })));
       if (previews.length === 0 && pendingWatchedReviewFilesRef.current.length > 0) {
@@ -3549,13 +3633,23 @@ export default function App() {
   }
 
   function applyCollectionToSelectedImports() {
-    const collectionName = importBulkCollection.trim();
-    if (!collectionName) return;
+    const collectionId = importBulkCollection.trim();
+    const collectionName = importBulkNewCollection.trim();
+    if (!collectionId && !collectionName) return;
+    const existingCollection = collectionId
+      ? collections.find(collection => collection.id === collectionId)
+      : null;
     setImportDrafts(current => current.map(draft => draft.selected
-      ? { ...draft, collectionNameDraft: collectionName }
+      ? {
+          ...draft,
+          collectionIdDraft: existingCollection?.id || '',
+          collectionNameDraft: existingCollection ? '' : collectionName
+        }
       : draft
     ));
-    setStatus(`Set selected import files to collection "${collectionName}".`);
+    setImportBulkCollection('');
+    setImportBulkNewCollection('');
+    setStatus(`Set selected import files to collection "${existingCollection?.name || collectionName}".`);
   }
 
   async function markPendingWatchedFilesHandled() {
@@ -3599,7 +3693,7 @@ export default function App() {
     setIsImporting(true);
     setImportProgress({ phase: 'Importing files', current: 0, total: selectedDrafts.length });
     try {
-      const knownCollections = new Map(collections.map(collection => [collection.name.toLowerCase(), collection]));
+      const knownCollections = new Map(importCollectionOptions.map(collection => [collection.name.toLowerCase(), collection]));
       const createdCollections = new Map<string, { id: string; name: string }>();
       let lastItem: VaultItem | undefined;
       const importedItems: VaultItem[] = [];
@@ -3611,7 +3705,9 @@ export default function App() {
         const collectionName = collectionNameForDraft(draft);
         const collectionIds: string[] = [];
 
-        if (collectionName) {
+        if (draft.collectionIdDraft) {
+          collectionIds.push(draft.collectionIdDraft);
+        } else if (collectionName) {
           const key = collectionName.toLowerCase();
           let collection = knownCollections.get(key) || createdCollections.get(key);
           if (!collection) {
@@ -5020,15 +5116,28 @@ export default function App() {
               <label>
                 Set collection for selected
                 <div>
-                  <input
+                  <select
                     value={importBulkCollection}
-                    onChange={event => setImportBulkCollection(event.target.value)}
-                    placeholder="Project or folder name"
-                    list="import-collection-suggestions"
+                    onChange={event => {
+                      setImportBulkCollection(event.target.value);
+                      if (event.target.value) setImportBulkNewCollection('');
+                    }}
+                  >
+                    <option value="">Choose existing collection...</option>
+                    {importCollectionOptions.map(collection => (
+                      <option key={collection.id} value={collection.id}>
+                        {collection.name}{collection.mode ? ` (${collection.mode})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    value={importBulkNewCollection}
+                    onChange={event => {
+                      setImportBulkNewCollection(event.target.value);
+                      if (event.target.value.trim()) setImportBulkCollection('');
+                    }}
+                    placeholder="Or create new collection..."
                   />
-                  <datalist id="import-collection-suggestions">
-                    {collections.map(collection => <option key={collection.id} value={collection.name} />)}
-                  </datalist>
                   <button type="button" onClick={applyCollectionToSelectedImports}>Apply</button>
                 </div>
               </label>
@@ -5071,10 +5180,25 @@ export default function App() {
 
                   <label className="import-review-field">
                     Collection
+                    <select
+                      value={draft.collectionIdDraft}
+                      onChange={event => updateImportDraft(draft.importId, {
+                        collectionIdDraft: event.target.value,
+                        collectionNameDraft: event.target.value ? '' : draft.collectionNameDraft
+                      })}
+                    >
+                      <option value="">No existing collection</option>
+                      {importCollectionOptions.map(collection => (
+                        <option key={collection.id} value={collection.id}>
+                          {collection.name}{collection.mode ? ` (${collection.mode})` : ''}
+                        </option>
+                      ))}
+                    </select>
                     <input
                       value={draft.collectionNameDraft}
-                      onChange={event => updateImportDraft(draft.importId, { collectionNameDraft: event.target.value })}
-                      placeholder="Optional project/collection"
+                      disabled={Boolean(draft.collectionIdDraft)}
+                      onChange={event => updateImportDraft(draft.importId, { collectionIdDraft: '', collectionNameDraft: event.target.value })}
+                      placeholder={draft.collectionIdDraft ? `Using ${collectionLabelForDraft(draft)}` : 'Or create new collection...'}
                     />
                   </label>
 
@@ -5695,7 +5819,7 @@ export default function App() {
             <section className="dashboard-recent notes-recent-files-panel">
               <div className="dashboard-recent-header">
                 <div><h2>Recently accessed files</h2><p>References and documents from the note side of the vault.</p></div>
-                <button onClick={() => openDashboardLibrary('file')}>Open Files</button>
+                <button className="dashboard-secondary-action" onClick={() => openDashboardLibrary('file')}>Open Files</button>
               </div>
               {noteRecentFiles.length ? (
                 <div className="dashboard-recent-list notes-recent-file-list">
@@ -6066,13 +6190,21 @@ export default function App() {
                 <div className="dashboard-hero-actions">
                   <button className="dashboard-secondary-action" onClick={() => setActiveMemory(null)}>Back to Memories</button>
                   <button className="dashboard-secondary-action" onClick={() => renameMemory(activeMemory).catch(err => setStatus(err.message))}>Rename</button>
+                  <button className="dashboard-secondary-action" onClick={() => saveActiveMemoryRelationships().catch(err => setStatus(err.message))}>Save Relationships</button>
                   <button className="dashboard-secondary-action" onClick={() => openDashboardLibrary()}>Open Library</button>
                   <button className="dashboard-secondary-action danger-action" onClick={() => deleteMemory(activeMemory.id, activeMemory.title).catch(err => setStatus(err.message))}>Delete Memory</button>
                 </div>
               </div>
 
               <section className="memory-add-panel">
-                <input value={memoryItemSearch} onChange={event => setMemoryItemSearch(event.target.value)} placeholder="Search vault items to add..." />
+                <div className="memory-add-search">
+                  <div>
+                    <span className="dashboard-kicker">Add from Vault</span>
+                    <strong>Build this Memory from anything local</strong>
+                    <small>Search notes, screenshots, sound effects, PDFs, photos, or music. Audio goes into the Memory Mix instead of cluttering the board.</small>
+                  </div>
+                  <input value={memoryItemSearch} onChange={event => setMemoryItemSearch(event.target.value)} placeholder="Search vault items to add..." />
+                </div>
                 <div className="memory-scrapbook-toolbar">
                   <span>Scrapbook</span>
                   <button type="button" onClick={() => addMemoryDecoration('string').catch(err => setStatus(err.message))}>Red String</button>
@@ -6101,12 +6233,21 @@ export default function App() {
                 {memorySearchResults.length > 0 && (
                   <div className="memory-search-results">
                     {memorySearchResults.map(item => (
-                      <button key={item.id} type="button" onClick={() => addItemToActiveMemory(item.id).catch(err => setStatus(err.message))}>
+                      <button
+                        key={item.id}
+                        type="button"
+                        disabled={activeMemoryItemIds.has(item.id)}
+                        onClick={() => addItemToActiveMemory(item.id).catch(err => setStatus(err.message))}
+                      >
                         {item.thumbnail_data ? <img src={item.thumbnail_data} alt="" style={imageRotationStyle(item)} /> : item.type === 'note' ? <FileText size={16} /> : <FolderOpen size={16} />}
                         <span>{item.title || item.file_name || 'Untitled'}</span>
+                        {activeMemoryItemIds.has(item.id) && <small>Added</small>}
                       </button>
                     ))}
                   </div>
+                )}
+                {memoryItemSearch.trim() && memorySearchResults.length === 0 && (
+                  <div className="memory-search-empty">No matching vault items found.</div>
                 )}
               </section>
 
@@ -6706,11 +6847,12 @@ export default function App() {
               <div className="bulk-action-panel">
                 <strong>Edit collections for selected items</strong>
                 <div className="bulk-choice-list">
-                  {collections.map(collection => <label key={collection.id}>
+                  {bulkCollectionOptions.map(collection => <label key={collection.id}>
                     <input type="checkbox" checked={bulkCollections.has(collection.id)} onChange={() => toggleBulkCollection(collection.id)} />
                     <span>{collection.name}</span>
                     {bulkCollectionUsage.has(collection.id) && <small>{bulkCollectionUsage.get(collection.id)}/{selectedItemIds.size}</small>}
                   </label>)}
+                  {bulkCollectionOptions.length === 0 && <span className="muted-label">No collections for this mode yet.</span>}
                 </div>
                 <div className="bulk-action-footer">
                   <button onClick={() => setShowBulkCollectionPicker(false)}>Cancel</button>
