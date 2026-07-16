@@ -120,6 +120,8 @@ type VaultSettings = {
   activatedDeviceId?: string;
   trialStartedAt?: string;
   licenseTrialStartedAt?: string;
+  lastLicenseCheckAt?: string;
+  trialClockRollbackDetected?: boolean;
   licenseSchemaVersion?: number;
   watchedFolders: WatchedFolder[];
   lastAutoBackupAt?: string;
@@ -477,7 +479,18 @@ function getLicenseStatus() {
   const startedAt = vaultSettings.licenseTrialStartedAt || vaultSettings.trialStartedAt || nowIso();
   const trialEndsAt = new Date(new Date(startedAt).getTime() + trialDays * 24 * 60 * 60 * 1000).toISOString();
   const activation: any = validateActivationToken(revealSecret(vaultSettings.activationTokenSecret));
-  const trialActive = Date.now() <= new Date(trialEndsAt).getTime();
+  const now = Date.now();
+  const rollbackGraceMs = 24 * 60 * 60 * 1000;
+  const lastSeenTime = vaultSettings.lastLicenseCheckAt ? new Date(vaultSettings.lastLicenseCheckAt).getTime() : 0;
+  if (!activation.valid && Number.isFinite(lastSeenTime) && lastSeenTime > 0 && now + rollbackGraceMs < lastSeenTime) {
+    vaultSettings.trialClockRollbackDetected = true;
+    writeLog(`Trial clock rollback detected. Last seen ${vaultSettings.lastLicenseCheckAt}, current ${new Date(now).toISOString()}.`);
+  }
+  if (!vaultSettings.lastLicenseCheckAt || !Number.isFinite(lastSeenTime) || now > lastSeenTime) {
+    vaultSettings.lastLicenseCheckAt = new Date(now).toISOString();
+  }
+  saveSettings();
+  const trialActive = !vaultSettings.trialClockRollbackDetected && now <= new Date(trialEndsAt).getTime();
   return {
     licensed: activation.valid,
     locked: !activation.valid && !trialActive,
@@ -486,7 +499,7 @@ function getLicenseStatus() {
     trialDaysRemaining: Math.max(0, Math.ceil((new Date(trialEndsAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000))),
     licenseName: activation.name || '',
     licenseExpiresAt: activation.expiresAt || '',
-    reason: activation.valid ? '' : activation.reason,
+    reason: activation.valid ? '' : vaultSettings.trialClockRollbackDetected ? 'The trial clock appears to have been rolled back. Enter a license key to unlock Note Vault.' : activation.reason,
     deviceId: getDeviceId(),
     activationServerUrl
   };
@@ -2178,6 +2191,11 @@ type ReleaseAsset = { name: string; url: string };
 type GithubRelease = { tagName: string; url: string; assets: ReleaseAsset[] };
 
 const whatsNewByVersion: Record<string, string[]> = {
+  '2.0.1': [
+    'Trial handling now detects obvious local clock rollback attempts without adding recurring license checks.',
+    'Licensed users still validate offline from their signed one-time activation token.',
+    'This patch keeps the 2.0 upgrade safety backup behavior in place.'
+  ],
   '2.0.0': [
     'A new Dashboard, Notes, Photos, Music, and Settings mode layout makes the vault easier to browse.',
     'Memories add a scrapbook-style canvas for connecting notes, photos, files, and music.',
