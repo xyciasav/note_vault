@@ -1,6 +1,6 @@
 {
   "name": "vault-notes",
-  "version": "2.0.11",
+  "version": "2.0.12",
   "description": "Local-first Windows notes and file vault with tags, search, and backups.",
   "main": "dist/main/index.js",
   "scripts": {

@@ -92,7 +92,7 @@ button, input, textarea { font: inherit; }
 .mode-slider button small { margin-left: 3px; color: inherit; opacity: .62; font-size: 9px; text-transform: uppercase; }
 .hero-mode-slider { width: min(570px, 100%); padding: 4px; border-color: #475569; background: #111827; }
 .hero-mode-slider::before { top: 4px; bottom: 4px; left: 4px; width: calc((100% - 8px) / 6); background: #f8fafc; }
-.hero-mode-slider button { min-height: 40px; font-size: 13px; }
+.hero-mode-slider button { min-height: 40px; font-size: 12px; padding-inline: 5px; }
 .sidebar-mode-slider button { font-size: 11px; padding: 7px 5px; }
 .sidebar-actions { padding: 10px; border: 1px solid rgba(148, 163, 184, .16); border-radius: 16px; background: rgba(15, 23, 42, .58); }
 .sidebar-nav { padding-bottom: 6px; border-bottom: 1px solid rgba(148, 163, 184, .14); }
@@ -2488,7 +2488,7 @@ body {
 .app-header-mode-slider {
   grid-column: 1;
   grid-row: 2;
-  width: min(460px, 78vw);
+  width: min(680px, 86vw);
 }
 
 .app-header-actions {
@@ -2535,6 +2535,21 @@ body {
 
 .detail-panel {
   grid-column: 2 !important;
+  grid-row: 2 !important;
+}
+
+.app-shell.workbench-mode .workbench-collections-panel {
+  grid-column: 1 !important;
+  grid-row: 2 !important;
+}
+
+.app-shell.workbench-mode .list-panel {
+  grid-column: 2 !important;
+  grid-row: 2 !important;
+}
+
+.app-shell.workbench-mode .detail-panel {
+  grid-column: 3 !important;
   grid-row: 2 !important;
 }
 
