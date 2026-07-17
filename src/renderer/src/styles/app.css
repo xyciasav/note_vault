@@ -3097,7 +3097,7 @@ body {
 
 .collection-card {
   position: relative;
-  padding-right: 48px;
+  padding-right: 86px;
 }
 
 .collection-card-trash {
@@ -3117,6 +3117,31 @@ body {
   line-height: 1;
 }
 
+.collection-card-sub {
+  position: absolute;
+  top: 48px;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  min-width: 58px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(96, 165, 250, .45);
+  border-radius: 999px;
+  background: rgba(37, 99, 235, .18);
+  color: #bfdbfe;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.collection-card-sub:hover {
+  border-color: rgba(147, 197, 253, .9);
+  background: rgba(37, 99, 235, .34);
+  color: #eff6ff;
+}
+
 .collection-card-trash:hover {
   border-color: rgba(248, 113, 113, .72);
   background: rgba(127, 29, 29, .42);
@@ -3132,6 +3157,18 @@ body {
   border-color: rgba(220, 38, 38, .48);
   background: rgba(254, 226, 226, .9);
   color: #b91c1c;
+}
+
+.app-shell:not(.theme-dark) .collection-card-sub {
+  background: rgba(219, 234, 254, .88);
+  border-color: rgba(59, 130, 246, .42);
+  color: #1d4ed8;
+}
+
+.app-shell:not(.theme-dark) .collection-card-sub:hover {
+  background: rgba(191, 219, 254, .95);
+  border-color: rgba(37, 99, 235, .68);
+  color: #1e3a8a;
 }
 
 .note-list-card {

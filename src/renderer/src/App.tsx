@@ -1174,6 +1174,7 @@ export default function App() {
   const [allRelationships, setAllRelationships] = useState<VaultRelationshipSummary[]>([]);
   const [relationshipPageView, setRelationshipPageView] = useState<'hubs' | 'manage'>('hubs');
   const [selectedRelationshipHubId, setSelectedRelationshipHubId] = useState<string | null>(null);
+  const [collectionScopeAll, setCollectionScopeAll] = useState(false);
   const [memories, setMemories] = useState<VaultMemory[]>([]);
   const [activeMemory, setActiveMemory] = useState<VaultMemoryDetail | null>(null);
   const [memorySuggestions, setMemorySuggestions] = useState<VaultMemorySuggestion[]>([]);
@@ -1313,8 +1314,9 @@ export default function App() {
   const collectionPageCollections = useMemo(() => sortedCollections.filter(collection => {
     const parentMatches = collectionPageParentId ? collection.parent_id === collectionPageParentId : !collection.parent_id;
     if (!parentMatches) return false;
+    if (collectionScopeAll) return true;
     return collectionMatchesWorkspaceMode(collection, workspaceMode);
-  }), [collectionPageParentId, sortedCollections, workspaceMode]);
+  }), [collectionPageParentId, collectionScopeAll, sortedCollections, workspaceMode]);
 
   const workspaceCollectionOptions = useMemo(
     () => sortedCollections.filter(collection => collectionMatchesWorkspaceMode(collection, workspaceMode)),
@@ -1583,13 +1585,14 @@ export default function App() {
 
   const attachableMusicSubCollections = useMemo(() => {
     const parent = collectionPageParent || activeCollection;
-    if (!parent || workspaceMode !== 'music') return [];
+    if (!parent) return [];
+    const parentMode = parent.mode || '';
     return sortedCollections.filter(collection =>
       collection.id !== parent.id &&
-      (collection.mode || '') === 'music' &&
+      (collection.mode || '') === parentMode &&
       !collection.parent_id
     );
-  }, [activeCollection, collectionPageParent, sortedCollections, workspaceMode]);
+  }, [activeCollection, collectionPageParent, sortedCollections]);
 
   const tagWordWall = useMemo(
     () => tagRecords.map(tag => ({ label: tag.name, count: Number(tag.count || 0) })),
@@ -2401,12 +2404,24 @@ export default function App() {
   }
 
   function currentAudioPlaylist() {
-    if (!currentAudioItem) return [...musicItems].filter(item => isAudioItem(item));
+    const audioMap = new Map<string, VaultItem>();
+    [...musicItems, ...items].forEach(item => {
+      if (isAudioItem(item)) audioMap.set(item.id, item);
+    });
+    if (currentAudioItem && isAudioItem(currentAudioItem)) {
+      audioMap.set(currentAudioItem.id, currentAudioItem);
+    }
+    const audioItems = [...audioMap.values()];
+    if (!currentAudioItem) return audioItems;
 
     const currentCollectionIds = new Set(currentAudioItem.collection_ids || []);
-    return [...musicItems]
-      .filter(item => isAudioItem(item))
-      .filter(item => currentCollectionIds.size === 0 || (item.collection_ids || []).some(collectionId => currentCollectionIds.has(collectionId)))
+    const activeCollectionIds = selectedCollectionId ? new Set([selectedCollectionId]) : currentCollectionIds;
+    return audioItems
+      .filter(item => {
+        const itemCollectionIds = item.collection_ids || [];
+        if (activeCollectionIds.size === 0) return true;
+        return itemCollectionIds.some(collectionId => activeCollectionIds.has(collectionId));
+      })
       .sort((left, right) => (left.title || left.file_name || '').localeCompare(right.title || right.file_name || ''));
   }
 
@@ -2723,6 +2738,7 @@ export default function App() {
       setSelectedCollectionId(null);
       setSelectedId(null);
       setSearch('');
+      setCollectionScopeAll(collectionScopeAll);
       setAppView('collections');
       return;
     }
@@ -2737,6 +2753,11 @@ export default function App() {
     }
     if (collectionPageParentId) {
       setCollectionPageParentId(null);
+      return;
+    }
+    if (collectionScopeAll) {
+      setCollectionScopeAll(false);
+      await changeAppView('dashboard');
       return;
     }
     await changeAppView('mode');
@@ -3335,8 +3356,21 @@ export default function App() {
   async function changeAppView(nextView: AppView) {
     if (nextView === appView) return;
     if (!(await confirmSaveDirtyChanges())) return;
-    if (nextView === 'collections') setCollectionPageParentId(null);
+    if (nextView === 'collections') {
+      setCollectionPageParentId(null);
+      setCollectionScopeAll(false);
+    }
     setAppView(nextView);
+  }
+
+  async function openAllCollections() {
+    if (!(await confirmSaveDirtyChanges())) return;
+    setCollectionPageParentId(null);
+    setCollectionScopeAll(true);
+    setSelectedCollectionId(null);
+    setSelectedId(null);
+    setSearch('');
+    setAppView('collections');
   }
 
   async function changeWorkspaceMode(nextMode: WorkspaceMode) {
@@ -3344,6 +3378,7 @@ export default function App() {
     if (!(await confirmSaveDirtyChanges())) return;
     setWorkspaceMode(nextMode);
     setCollectionPageParentId(null);
+    setCollectionScopeAll(false);
     setShowLibraryContentFilter(false);
     setLibraryContentFilter('all');
     setLibraryFavoriteOnly(false);
@@ -3432,7 +3467,9 @@ export default function App() {
         : appView === 'library' && activeCollection
           ? activeCollection.id
           : undefined;
-      const collection = await window.vaultApi.createCollection({ name: collectionName, mode: workspaceMode, parentId });
+      const parentCollection = parentId ? collections.find(collection => collection.id === parentId) : null;
+      const mode = parentCollection ? (parentCollection.mode || '') : collectionScopeAll ? '' : workspaceMode;
+      const collection = await window.vaultApi.createCollection({ name: collectionName, mode, parentId });
       await refresh();
       if (!parentId && appView !== 'collections') setSelectedCollectionId(collection.id);
       setNewCollectionName('');
@@ -5787,7 +5824,7 @@ export default function App() {
             <button className="dashboard-card action-card dashboard-card-warm" onClick={() => { setActiveMemory(null); changeAppView('memories'); }}>
               <span>Build</span><strong>Memories</strong><small>Arrange photos, notes, files, and audio into a private scrapbook page.</small>
             </button>
-            <button className="dashboard-card action-card" onClick={() => changeAppView('collections')}>
+            <button className="dashboard-card action-card" onClick={openAllCollections}>
               <span>Organize</span><strong>Collections</strong><small>Jump into projects, groups, sets, albums, or bundles.</small>
             </button>
           </section>
@@ -5854,7 +5891,7 @@ export default function App() {
             <section className="dashboard-cards dashboard-stats-grid">
               <button className="dashboard-card stat-card" onClick={() => changeAppView('notes')}><span>Notes</span><strong>{dashboard?.notes ?? 0}</strong><small>Entries and saved notes</small></button>
               <button className="dashboard-card stat-card" onClick={() => openDashboardLibrary('file')}><span>Files</span><strong>{dashboard?.files ?? 0}</strong><small>Attached documents and references</small></button>
-              <button className="dashboard-card stat-card" onClick={() => changeAppView('collections')}><span>Collections</span><strong>{dashboard?.collections ?? 0}</strong><small>Projects and note bundles</small></button>
+              <button className="dashboard-card stat-card" onClick={openAllCollections}><span>Collections</span><strong>{dashboard?.collections ?? 0}</strong><small>Projects and note bundles</small></button>
               <button className="dashboard-card stat-card" onClick={openJournalTags}><span>Tags</span><strong>{dashboard?.tags ?? 0}</strong><small>Saved tag vocabulary</small></button>
               <button className="dashboard-card stat-card" onClick={() => openFavoritesLibrary()}><span>Starred</span><strong>{dashboard?.favorites ?? 0}</strong><small>Items marked for quick access</small></button>
               <button className="dashboard-card stat-card" onClick={() => changeAppView('relationships')}><span>Relationships</span><strong>{dashboard?.relationships ?? 0}</strong><small>Connections between notes and files</small></button>
@@ -6080,13 +6117,13 @@ export default function App() {
         <main className="dashboard-panel journal-subpage-panel">
           <div className="content-frame-heading">
             <div>
-              <span className="dashboard-kicker">{collectionPageParent ? 'Sub Collections' : workspaceMode === 'music' ? 'Music Collections' : workspaceMode === 'photo' ? 'Photo Collections' : 'Notes Collections'}</span>
-              <h2>{collectionPageParent ? collectionPageParent.name : workspaceMode === 'music' ? 'Albums, crates, sets, and audio groups' : workspaceMode === 'photo' ? 'Albums, trips, people, and relationship groups' : 'Projects, bundles, and grouped notes'}</h2>
-              <p>{collectionPageParent ? `Collections attached under ${collectionPageParent.name}.` : workspaceMode === 'music' ? 'Only collections marked for music or containing audio are shown here.' : workspaceMode === 'photo' ? 'Only photo/video collections are shown here.' : 'Create a collection, then open it to see the notes and files inside.'}</p>
+              <span className="dashboard-kicker">{collectionPageParent ? 'Sub Collections' : collectionScopeAll ? 'All Collections' : workspaceMode === 'music' ? 'Music Collections' : workspaceMode === 'photo' ? 'Photo Collections' : 'Notes Collections'}</span>
+              <h2>{collectionPageParent ? collectionPageParent.name : collectionScopeAll ? 'Projects, albums, groups, and bundles' : workspaceMode === 'music' ? 'Albums, crates, sets, and audio groups' : workspaceMode === 'photo' ? 'Albums, trips, people, and relationship groups' : 'Projects, bundles, and grouped notes'}</h2>
+              <p>{collectionPageParent ? `Collections attached under ${collectionPageParent.name}.` : collectionScopeAll ? 'Every top-level collection is shown here. Mode-specific pages still show only their own collections.' : workspaceMode === 'music' ? 'Only collections marked for music or containing audio are shown here.' : workspaceMode === 'photo' ? 'Only photo/video collections are shown here.' : 'Create a collection, then open it to see the notes and files inside.'}</p>
             </div>
             <div className="dashboard-hero-actions">
               <button className="dashboard-secondary-action" onClick={() => backCollectionPage().catch(err => setStatus(err.message))}>
-                {collectionPageParent ? 'Back to Collections' : 'Back to Notes'}
+                {collectionPageParent ? 'Back to Collections' : collectionScopeAll ? 'Home Dashboard' : 'Back to Notes'}
               </button>
             </div>
           </div>
@@ -6094,8 +6131,8 @@ export default function App() {
           <section className="collection-create-panel">
             {collectionPageParent && (
               <div className="collection-create-help">
-                <strong>Add albums under {collectionPageParent.name}</strong>
-                <small>Create a new album/project here, or attach an existing top-level music collection as an album.</small>
+                <strong>Add sub-collections under {collectionPageParent.name}</strong>
+                <small>Create a new child collection here, or attach an existing top-level collection from the same workspace.</small>
               </div>
             )}
             <div className="collection-create-row">
@@ -6105,16 +6142,16 @@ export default function App() {
                 onKeyDown={event => {
                   if (event.key === 'Enter') createCollection();
                 }}
-                placeholder={collectionPageParent ? `New album/project under ${collectionPageParent.name}...` : workspaceMode === 'music' ? 'New album, project, set, crate, or sample pack...' : 'New collection name...'}
+                placeholder={collectionPageParent ? `New sub-collection under ${collectionPageParent.name}...` : collectionScopeAll ? 'New general collection name...' : workspaceMode === 'music' ? 'New album, project, set, crate, or sample pack...' : 'New collection name...'}
               />
               <button onMouseDown={event => event.preventDefault()} onClick={createCollection}>
-                {collectionPageParent ? 'Create Album Here' : workspaceMode === 'music' ? 'Create Album / Project' : 'Create Collection'}
+                {collectionPageParent ? 'Create Sub-Collection' : workspaceMode === 'music' ? 'Create Album / Project' : 'Create Collection'}
               </button>
             </div>
             {collectionPageParent && attachableMusicSubCollections.length > 0 && (
               <div className="collection-create-row collection-attach-row">
                 <select value={subCollectionAttachId} onChange={event => setSubCollectionAttachId(event.target.value)}>
-                  <option value="">Attach existing album/project...</option>
+                  <option value="">Attach existing collection...</option>
                   {attachableMusicSubCollections.map(collection => (
                     <option key={collection.id} value={collection.id}>
                       {collection.name}
@@ -6164,6 +6201,22 @@ export default function App() {
                   }}
                 >
                   🗑
+                </button>
+                <button
+                  type="button"
+                  className="collection-card-sub"
+                  aria-label={`Manage sub-collections for ${collection.name}`}
+                  title="Add or manage sub-collections"
+                  onClick={event => {
+                    event.stopPropagation();
+                    setCollectionPageParentId(collection.id);
+                    setSelectedCollectionId(null);
+                    setSelectedId(null);
+                    setSearch('');
+                    setAppView('collections');
+                  }}
+                >
+                  + Sub
                 </button>
                 <span>{collection.child_count ? 'Sub collections' : collection.mode === 'music' ? 'Music collection' : collection.mode === 'photo' ? 'Photo collection' : 'Collection'}</span>
                 <strong>{collection.name}</strong>
