@@ -32,9 +32,10 @@ type TypeFilter = 'all' | 'note' | 'file';
 type LibraryContentFilter = 'all' | 'notes' | 'documents' | 'media' | 'audio';
 type ItemSort = 'updated' | 'created' | 'title' | 'tags';
 type CollectionSort = 'name' | 'recent' | 'count';
-type AppView = 'dashboard' | 'mode' | 'notes' | 'collections' | 'relationships' | 'memories' | 'locations' | 'library' | 'search' | 'settings';
+type AppView = 'dashboard' | 'workbench' | 'mode' | 'notes' | 'collections' | 'relationships' | 'memories' | 'locations' | 'library' | 'search' | 'settings';
 type WorkspaceMode = 'note' | 'photo' | 'music';
-type TopNavMode = 'dashboard' | WorkspaceMode | 'settings';
+type StartupView = 'dashboard' | 'workbench' | WorkspaceMode;
+type TopNavMode = 'dashboard' | 'workbench' | WorkspaceMode | 'settings';
 type PhotoWorkspaceView = 'library' | 'search';
 type PhotoMediaFilter = 'media' | 'image' | 'video';
 type BackupFrequency = 'on-close' | 'daily' | 'weekly' | 'never';
@@ -770,6 +771,7 @@ function ModeSlider({
 }) {
   const modes: { value: TopNavMode; label: string }[] = [
     { value: 'dashboard', label: 'Dashboard' },
+    { value: 'workbench', label: 'Workbench' },
     { value: 'note', label: 'Notes' },
     { value: 'photo', label: 'Photos' },
     { value: 'music', label: 'Music' },
@@ -1123,6 +1125,8 @@ export default function App() {
   const [backupFrequency, setBackupFrequency] = useState<BackupFrequency>('daily');
   const [backupRetentionCount, setBackupRetentionCount] = useState(10);
   const [backupStats, setBackupStats] = useState<BackupStats | null>(null);
+  const [startupView, setStartupView] = useState<StartupView>('dashboard');
+  const [hasAppliedStartupView, setHasAppliedStartupView] = useState(false);
   const [allowNewImportTagSuggestions, setAllowNewImportTagSuggestions] = useState(true);
   const [backupEncryptionEnabled, setBackupEncryptionEnabled] = useState(false);
   const [backupEncryptionSaved, setBackupEncryptionSaved] = useState(false);
@@ -1461,6 +1465,32 @@ export default function App() {
     localStorage.setItem('vault-notes-workspace-mode', workspaceMode);
   }, [workspaceMode]);
 
+  function applyStartupView(nextStartupView: StartupView) {
+    setCollectionPageParentId(null);
+    setSelectedCollectionId(null);
+    setSelectedId(null);
+    setSearch('');
+    setSearchPreviewItem(null);
+    setLibraryFavoriteOnly(false);
+
+    if (nextStartupView === 'workbench') {
+      setWorkspaceMode('note');
+      setTypeFilter('all');
+      setLibraryContentFilter('all');
+      setShowLibraryContentFilter(true);
+      setAppView('workbench');
+      return;
+    }
+
+    if (nextStartupView === 'dashboard') {
+      setAppView('dashboard');
+      return;
+    }
+
+    setWorkspaceMode(nextStartupView);
+    setAppView('mode');
+  }
+
   useEffect(() => {
     localStorage.setItem('vault-notes-audio-play-stats', JSON.stringify(audioPlayStats));
   }, [audioPlayStats]);
@@ -1520,7 +1550,7 @@ export default function App() {
     [collections, selectedCollectionId]
   );
 
-  const canShowLibraryContentFilter = appView === 'library'
+  const canShowLibraryContentFilter = (appView === 'library' || appView === 'workbench')
     && showLibraryContentFilter
     && workspaceMode === 'note'
     && !selectedCollectionId
@@ -1749,9 +1779,9 @@ export default function App() {
     const includeMetadata = overrides?.includeMetadata !== false;
     const effectiveContentFilter = canShowLibraryContentFilter
       ? (overrides?.contentFilter ?? libraryContentFilter)
-      : workspaceMode === 'music' && appView === 'library'
+      : workspaceMode === 'music' && (appView === 'library' || appView === 'workbench')
         ? 'audio'
-        : workspaceMode === 'photo' && appView === 'library'
+        : workspaceMode === 'photo' && (appView === 'library' || appView === 'workbench')
         ? 'media'
         : 'all';
     const contentArgs = libraryContentArgs(
@@ -2660,6 +2690,7 @@ export default function App() {
 
   async function openDashboardLibrary(type: TypeFilter = 'all') {
     if (!(await confirmSaveDirtyChanges())) return;
+    const targetView: AppView = appView === 'workbench' ? 'workbench' : 'library';
     const loadedItems = await window.vaultApi.listItems({
       search: '',
       tag: '',
@@ -2683,11 +2714,12 @@ export default function App() {
     setLibraryPage(0);
     setLibraryHasNextPage(loadedItems.length >= libraryPageSize);
     setSelectedId(loadedItems[0]?.id || null);
-    setAppView('library');
+    setAppView(targetView);
   }
 
   async function openFavoritesLibrary() {
     if (!(await confirmSaveDirtyChanges())) return;
+    const targetView: AppView = appView === 'workbench' ? 'workbench' : 'library';
     const loadedItems = await window.vaultApi.listItems({
       search: '',
       tag: '',
@@ -2709,11 +2741,12 @@ export default function App() {
     setLibraryPage(0);
     setLibraryHasNextPage(loadedItems.length >= libraryPageSize);
     setSelectedId(loadedItems[0]?.id || null);
-    setAppView('library');
+    setAppView(targetView);
   }
 
   async function openCollectionLibrary(collectionId: string) {
     if (!(await confirmSaveDirtyChanges())) return;
+    const targetView: AppView = appView === 'workbench' ? 'workbench' : 'library';
     const collection = collections.find(entry => entry.id === collectionId);
     const targetMode: WorkspaceMode = collection?.mode === 'music'
       ? 'music'
@@ -2728,7 +2761,7 @@ export default function App() {
     setLibraryFavoriteOnly(false);
     setSearch('');
     setWorkspaceMode(targetMode);
-    setAppView('library');
+    setAppView(targetView);
   }
 
   async function openCollectionCard(collection: VaultCollection) {
@@ -2765,6 +2798,16 @@ export default function App() {
 
   async function backToCollections() {
     if (!(await confirmSaveDirtyChanges())) return;
+    if (appView === 'workbench') {
+      setSelectedCollectionId(null);
+      setSelectedId(null);
+      setSearch('');
+      setTypeFilter('all');
+      setLibraryContentFilter('all');
+      setShowLibraryContentFilter(true);
+      setLibraryFavoriteOnly(false);
+      return;
+    }
     if (activeCollectionParent) {
       setSelectedCollectionId(activeCollectionParent.id);
       setSelectedId(null);
@@ -2946,6 +2989,11 @@ export default function App() {
         setBackupFrequency(settings.backupFrequency);
         setBackupRetentionCount(settings.backupRetentionCount);
         setBackupStats(settings.backupStats);
+        setStartupView(settings.startupView || 'dashboard');
+        if (!hasAppliedStartupView) {
+          applyStartupView(settings.startupView || 'dashboard');
+          setHasAppliedStartupView(true);
+        }
         setAllowNewImportTagSuggestions(settings.allowNewImportTagSuggestions !== false);
         setBackupEncryptionEnabled(Boolean(settings.backupEncryptionEnabled));
         setBackupEncryptionSaved(Boolean(settings.backupEncryptionEnabled));
@@ -3389,6 +3437,18 @@ export default function App() {
   async function changeTopNavMode(nextMode: TopNavMode) {
     if (nextMode === 'dashboard') {
       await changeAppView('dashboard');
+      setSearchPreviewItem(null);
+      return;
+    }
+    if (nextMode === 'workbench') {
+      if (!(await confirmSaveDirtyChanges())) return;
+      setWorkspaceMode('note');
+      setCollectionPageParentId(null);
+      setCollectionScopeAll(false);
+      setShowLibraryContentFilter(true);
+      setLibraryContentFilter('all');
+      setLibraryFavoriteOnly(false);
+      setAppView('workbench');
       setSearchPreviewItem(null);
       return;
     }
@@ -4297,6 +4357,12 @@ export default function App() {
     );
   }
 
+  async function changeStartupView(nextStartupView: StartupView) {
+    const result = await window.vaultApi.setStartupView(nextStartupView);
+    setStartupView(result.startupView || nextStartupView);
+    setStatus(`Startup view set to ${nextStartupView === 'note' ? 'Notes' : nextStartupView === 'photo' ? 'Photos' : nextStartupView === 'music' ? 'Music' : nextStartupView === 'workbench' ? 'Workbench' : 'Dashboard'}.`);
+  }
+
   async function checkForUpdates() {
     const result = await window.vaultApi.checkForUpdates();
     if (!result.updateAvailable) setStatus('Note Vault is up to date.');
@@ -4760,7 +4826,7 @@ export default function App() {
 
   return (
     <div
-      className={`app-shell ${isDarkMode ? 'theme-dark' : ''} ${appView === 'library' && isDetailFocus ? 'detail-focus' : ''} ${appView === 'library' && isListFocus ? 'list-focus' : ''} ${resizingPane ? 'is-resizing' : ''}`}
+      className={`app-shell ${isDarkMode ? 'theme-dark' : ''} ${(appView === 'library' || appView === 'workbench') && isDetailFocus ? 'detail-focus' : ''} ${(appView === 'library' || appView === 'workbench') && isListFocus ? 'list-focus' : ''} ${appView === 'workbench' ? 'workbench-mode' : ''} ${resizingPane ? 'is-resizing' : ''}`}
       style={{ '--sidebar-width': `${sidebarWidth}px`, '--list-width': `${listWidth}px` } as React.CSSProperties}
       onDragOver={e => {
         if (!Array.from(e.dataTransfer.types || []).includes('Files') || e.dataTransfer.items.length === 0) return;
@@ -5626,7 +5692,7 @@ export default function App() {
 
       </aside>}
 
-      {appView === 'library' && !isDetailFocus && !isListFocus && <div className="pane-resizer pane-resizer-list" onMouseDown={event => {
+      {(appView === 'library' || appView === 'workbench') && !isDetailFocus && !isListFocus && <div className="pane-resizer pane-resizer-list" onMouseDown={event => {
         event.preventDefault();
         setResizingPane('list');
       }} />}
@@ -5650,7 +5716,7 @@ export default function App() {
               : 'Write notes, save your files, and connect the relationships around them.'}
           </p>
         </div>
-        <ModeSlider value={appView === 'dashboard' || appView === 'memories' || appView === 'relationships' || appView === 'locations' ? 'dashboard' : appView === 'settings' ? 'settings' : workspaceMode} onChange={mode => { changeTopNavMode(mode).catch(() => undefined); }} className="hero-mode-slider app-header-mode-slider" />
+        <ModeSlider value={appView === 'workbench' ? 'workbench' : appView === 'dashboard' || appView === 'memories' || appView === 'relationships' || appView === 'locations' ? 'dashboard' : appView === 'settings' ? 'settings' : workspaceMode} onChange={mode => { changeTopNavMode(mode).catch(() => undefined); }} className="hero-mode-slider app-header-mode-slider" />
       </header>
 
       {false && workspaceMode === 'music' && appView !== 'settings' ? (
@@ -6858,8 +6924,76 @@ export default function App() {
 
           {status && <div className="status-bar">{status}</div>}
         </main>
-      ) : appView === 'library' ? (
+      ) : appView === 'library' || appView === 'workbench' ? (
         <>
+          {appView === 'workbench' && !isDetailFocus && !isListFocus && (
+            <aside className="workbench-collections-panel" aria-label="Workbench collections">
+              <div className="workbench-panel-heading">
+                <span className="list-eyebrow">Workbench</span>
+                <h2>Collections</h2>
+                <p>Classic three-pane view: pick a collection, choose an item, preview it.</p>
+              </div>
+
+              <div className="workbench-actions">
+                <button
+                  type="button"
+                  className={!selectedCollectionId && !libraryFavoriteOnly ? 'active' : ''}
+                  onClick={() => openDashboardLibrary().catch(err => setStatus(err.message))}
+                >
+                  All Items
+                </button>
+                <button
+                  type="button"
+                  className={libraryFavoriteOnly ? 'active' : ''}
+                  onClick={() => openFavoritesLibrary().catch(err => setStatus(err.message))}
+                >
+                  <Star size={15} /> Starred
+                </button>
+              </div>
+
+              <div className="workbench-filter-row">
+                <select
+                  value={libraryContentFilter}
+                  onChange={event => {
+                    const filter = event.target.value as LibraryContentFilter;
+                    setShowLibraryContentFilter(true);
+                    setLibraryContentFilter(filter);
+                    if (filter === 'notes') setTypeFilter('note');
+                    else if (filter === 'documents' || filter === 'media' || filter === 'audio') setTypeFilter('file');
+                    else setTypeFilter('all');
+                  }}
+                  aria-label="Workbench content filter"
+                >
+                  <option value="all">Everything</option>
+                  <option value="notes">Notes</option>
+                  <option value="documents">Docs / files</option>
+                  <option value="media">Photos / videos</option>
+                  <option value="audio">Audio</option>
+                </select>
+              </div>
+
+              <div className="workbench-collection-list">
+                {sortedCollections.filter(collection => !collection.parent_id).map(collection => (
+                  <button
+                    key={collection.id}
+                    type="button"
+                    className={selectedCollectionId === collection.id ? 'active' : ''}
+                    onClick={() => openCollectionLibrary(collection.id).catch(err => setStatus(err.message))}
+                  >
+                    <span>
+                      <strong>{collection.name}</strong>
+                      <small>{collection.child_count ? `${collection.child_count} sub • ` : ''}{collection.count || 0} item{collection.count === 1 ? '' : 's'}</small>
+                    </span>
+                  </button>
+                ))}
+                {collections.length === 0 && (
+                  <div className="workbench-empty">
+                    No collections yet. Create one from the Collections page or assign items during import.
+                  </div>
+                )}
+              </div>
+            </aside>
+          )}
           {!isDetailFocus && <section className="list-panel">
             <div className="list-panel-header">
               <div>
@@ -8091,6 +8225,23 @@ export default function App() {
               <input type="checkbox" checked={isDarkMode} onChange={event => setIsDarkMode(event.target.checked)} />
               <span>Dark Mode</span>
             </label>
+            <div className="settings-control">
+              <label htmlFor="startup-view">Start app on</label>
+              <select
+                id="startup-view"
+                value={startupView}
+                onChange={event => changeStartupView(event.target.value as StartupView)}
+              >
+                <option value="dashboard">Dashboard</option>
+                <option value="workbench">Workbench - classic 3-pane</option>
+                <option value="note">Notes</option>
+                <option value="photo">Photos</option>
+                <option value="music">Music</option>
+              </select>
+              <p className="settings-note">
+                Pick Workbench if you want the app to open straight into collections, items, and preview.
+              </p>
+            </div>
           </section>
 
           <section className="settings-section settings-compact">

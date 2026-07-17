@@ -98,6 +98,7 @@ const googlePhotosMediaExts = new Set([
 ]);
 const audioExts = ['.mp3', '.wav', '.flac', '.aac', '.m4a', '.ogg', '.oga', '.opus', '.wma', '.aiff', '.aif'];
 type BackupFrequency = 'on-close' | 'daily' | 'weekly' | 'never';
+type StartupView = 'dashboard' | 'workbench' | 'note' | 'photo' | 'music';
 type WatchedFolder = {
   id: string;
   path: string;
@@ -110,6 +111,7 @@ type VaultSettings = {
   backupDirectory: string;
   backupFrequency: BackupFrequency;
   backupRetentionCount: number;
+  startupView: StartupView;
   allowNewImportTagSuggestions: boolean;
   backupEncryptionEnabled: boolean;
   backupEncryptionPasswordHash?: string;
@@ -150,6 +152,7 @@ function loadSettings() {
     backupDirectory: defaultBackupsDir(),
     backupFrequency: 'daily',
     backupRetentionCount: 10,
+    startupView: 'dashboard',
     allowNewImportTagSuggestions: true,
     backupEncryptionEnabled: false,
     watchedFolders: []
@@ -173,6 +176,9 @@ function loadSettings() {
     ? Math.max(1, Math.min(200, Math.round(Number(vaultSettings.backupRetentionCount))))
     : defaults.backupRetentionCount;
   vaultSettings.allowNewImportTagSuggestions = vaultSettings.allowNewImportTagSuggestions !== false;
+  vaultSettings.startupView = ['dashboard', 'workbench', 'note', 'photo', 'music'].includes(vaultSettings.startupView)
+    ? vaultSettings.startupView
+    : defaults.startupView;
   vaultSettings.backupEncryptionEnabled = Boolean(vaultSettings.backupEncryptionEnabled && vaultSettings.backupEncryptionPasswordHash && vaultSettings.backupEncryptionSalt);
   vaultSettings.trialStartedAt = vaultSettings.trialStartedAt || nowIso();
   if (!vaultSettings.licenseSchemaVersion) {
@@ -3955,15 +3961,20 @@ ipcMain.handle('backup:openFolder', async () => {
   return { ok: true, path: backupsDir };
 });
 
-ipcMain.handle('backup:getSettings', () => ({
+function settingsResponse() {
+  return {
   backupDirectory: backupsDir,
   backupFrequency: vaultSettings.backupFrequency,
   backupRetentionCount: vaultSettings.backupRetentionCount,
+  startupView: vaultSettings.startupView,
   allowNewImportTagSuggestions: vaultSettings.allowNewImportTagSuggestions,
   backupEncryptionEnabled: vaultSettings.backupEncryptionEnabled,
   backupEncryptionAvailable: safeStorage.isEncryptionAvailable(),
   backupStats: getBackupStats()
-}));
+  };
+}
+
+ipcMain.handle('backup:getSettings', () => settingsResponse());
 
 ipcMain.handle('backup:chooseFolder', async () => {
   const result = await dialog.showOpenDialog(mainWindow!, {
@@ -3981,13 +3992,7 @@ ipcMain.handle('backup:chooseFolder', async () => {
   return {
     canceled: false,
     path: backupsDir,
-    backupDirectory: backupsDir,
-    backupFrequency: vaultSettings.backupFrequency,
-    backupRetentionCount: vaultSettings.backupRetentionCount,
-    allowNewImportTagSuggestions: vaultSettings.allowNewImportTagSuggestions,
-    backupEncryptionEnabled: vaultSettings.backupEncryptionEnabled,
-    backupEncryptionAvailable: safeStorage.isEncryptionAvailable(),
-    backupStats: getBackupStats()
+    ...settingsResponse()
   };
 });
 
@@ -3995,15 +4000,7 @@ ipcMain.handle('backup:setFrequency', (_event, frequency: BackupFrequency) => {
   if (!['on-close', 'daily', 'weekly', 'never'].includes(frequency)) throw new Error('Invalid backup frequency');
   vaultSettings.backupFrequency = frequency;
   saveSettings();
-  return {
-    backupDirectory: backupsDir,
-    backupFrequency: frequency,
-    backupRetentionCount: vaultSettings.backupRetentionCount,
-    allowNewImportTagSuggestions: vaultSettings.allowNewImportTagSuggestions,
-    backupEncryptionEnabled: vaultSettings.backupEncryptionEnabled,
-    backupEncryptionAvailable: safeStorage.isEncryptionAvailable(),
-    backupStats: getBackupStats()
-  };
+  return settingsResponse();
 });
 
 ipcMain.handle('backup:setRetentionCount', (_event, count: number) => {
@@ -4012,12 +4009,7 @@ ipcMain.handle('backup:setRetentionCount', (_event, count: number) => {
   saveSettings();
   const pruneResult = pruneOldAutoBackups();
   return {
-    backupDirectory: backupsDir,
-    backupFrequency: vaultSettings.backupFrequency,
-    backupRetentionCount: vaultSettings.backupRetentionCount,
-    allowNewImportTagSuggestions: vaultSettings.allowNewImportTagSuggestions,
-    backupEncryptionEnabled: vaultSettings.backupEncryptionEnabled,
-    backupEncryptionAvailable: safeStorage.isEncryptionAvailable(),
+    ...settingsResponse(),
     backupStats: {
       count: pruneResult.count,
       totalBytes: pruneResult.totalBytes,
@@ -4030,15 +4022,14 @@ ipcMain.handle('backup:setRetentionCount', (_event, count: number) => {
 ipcMain.handle('settings:setImportTagSuggestions', (_event, allowNewTags: boolean) => {
   vaultSettings.allowNewImportTagSuggestions = Boolean(allowNewTags);
   saveSettings();
-  return {
-    backupDirectory: backupsDir,
-    backupFrequency: vaultSettings.backupFrequency,
-    backupRetentionCount: vaultSettings.backupRetentionCount,
-    allowNewImportTagSuggestions: vaultSettings.allowNewImportTagSuggestions,
-    backupEncryptionEnabled: vaultSettings.backupEncryptionEnabled,
-    backupEncryptionAvailable: safeStorage.isEncryptionAvailable(),
-    backupStats: getBackupStats()
-  };
+  return settingsResponse();
+});
+
+ipcMain.handle('settings:setStartupView', (_event, startupView: StartupView) => {
+  if (!['dashboard', 'workbench', 'note', 'photo', 'music'].includes(startupView)) throw new Error('Invalid startup view');
+  vaultSettings.startupView = startupView;
+  saveSettings();
+  return settingsResponse();
 });
 
 ipcMain.handle('backup:setEncryption', (_event, args: { enabled: boolean; password?: string }) => {
@@ -4063,15 +4054,7 @@ ipcMain.handle('backup:setEncryption', (_event, args: { enabled: boolean; passwo
     vaultSettings.backupEncryptionPasswordSecret = protectSecret(password);
   }
   saveSettings();
-  return {
-    backupDirectory: backupsDir,
-    backupFrequency: vaultSettings.backupFrequency,
-    backupRetentionCount: vaultSettings.backupRetentionCount,
-    allowNewImportTagSuggestions: vaultSettings.allowNewImportTagSuggestions,
-    backupEncryptionEnabled: vaultSettings.backupEncryptionEnabled,
-    backupEncryptionAvailable: safeStorage.isEncryptionAvailable(),
-    backupStats: getBackupStats()
-  };
+  return settingsResponse();
 });
 
 ipcMain.handle('watched:list', () => vaultSettings.watchedFolders.map(folder => ({

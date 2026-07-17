@@ -73,6 +73,7 @@ contextBridge.exposeInMainWorld('vaultApi', {
   setBackupRetentionCount: (count: number) => ipcRenderer.invoke('backup:setRetentionCount', count),
   setBackupEncryption: (args: { enabled: boolean; password?: string }) => ipcRenderer.invoke('backup:setEncryption', args),
   setImportTagSuggestions: (allowNewTags: boolean) => ipcRenderer.invoke('settings:setImportTagSuggestions', allowNewTags),
+  setStartupView: (startupView: string) => ipcRenderer.invoke('settings:setStartupView', startupView),
   importBackup: (args?: { password?: string }) => ipcRenderer.invoke('backup:import', args),
   listWatchedFolders: () => ipcRenderer.invoke('watched:list'),
   addWatchedFolder: () => ipcRenderer.invoke('watched:addFolder'),
