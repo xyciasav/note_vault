@@ -2447,6 +2447,11 @@ body {
   grid-template-rows: var(--app-header-height) minmax(0, 1fr) !important;
 }
 
+.app-shell.workbench-mode {
+  --app-header-height: 126px;
+  grid-template-columns: var(--sidebar-width, 260px) var(--list-width, 370px) minmax(320px, 1fr) !important;
+}
+
 .app-shell.detail-focus,
 .app-shell.list-focus {
   grid-template-columns: minmax(0, 1fr) !important;
@@ -2455,6 +2460,10 @@ body {
 .sidebar,
 .pane-resizer-sidebar {
   display: none !important;
+}
+
+.app-shell.workbench-mode .pane-resizer-workbench-left {
+  display: block !important;
 }
 
 .app-mode-header {
@@ -2467,6 +2476,11 @@ body {
   justify-items: center;
   gap: 10px;
   padding: 12px 24px 16px;
+}
+
+.app-shell.workbench-mode .app-mode-header {
+  gap: 6px;
+  padding: 8px 24px 12px;
 }
 
 .app-mode-title {
@@ -2483,6 +2497,10 @@ body {
 
 .app-mode-title p {
   font-size: 11px;
+}
+
+.app-shell.workbench-mode .app-mode-title p {
+  display: none;
 }
 
 .app-header-mode-slider {
@@ -2560,6 +2578,16 @@ body {
 
 .pane-resizer-list {
   left: calc(var(--responsive-list-width, min(var(--list-width, 370px), 42vw)) - 4px) !important;
+  top: var(--app-header-height) !important;
+}
+
+.app-shell.workbench-mode .pane-resizer-workbench-left {
+  left: calc(var(--sidebar-width, 260px) - 4px) !important;
+  top: var(--app-header-height) !important;
+}
+
+.app-shell.workbench-mode .pane-resizer-list {
+  left: calc(var(--sidebar-width, 260px) + var(--list-width, 370px) - 4px) !important;
   top: var(--app-header-height) !important;
 }
 

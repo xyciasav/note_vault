@@ -4147,10 +4147,15 @@ export default function App() {
     document.body.style.cursor = 'col-resize';
     const onMouseMove = (event: MouseEvent) => {
       event.preventDefault();
-      if (resizingPane === 'sidebar') setSidebarWidth(Math.max(180, Math.min(460, event.clientX)));
+      if (resizingPane === 'sidebar') setSidebarWidth(Math.max(190, Math.min(560, event.clientX)));
       else {
-        const availableWidth = Math.max(320, window.innerWidth - 180);
-        setListWidth(Math.max(250, Math.min(availableWidth, event.clientX)));
+        if (appView === 'workbench') {
+          const availableWidth = Math.max(260, window.innerWidth - sidebarWidth - 320);
+          setListWidth(Math.max(260, Math.min(availableWidth, event.clientX - sidebarWidth)));
+        } else {
+          const availableWidth = Math.max(320, window.innerWidth - 180);
+          setListWidth(Math.max(250, Math.min(availableWidth, event.clientX)));
+        }
       }
     };
     const onMouseUp = () => setResizingPane(null);
@@ -4167,7 +4172,7 @@ export default function App() {
       document.body.style.userSelect = previousUserSelect;
       document.body.style.cursor = previousCursor;
     };
-  }, [resizingPane]);
+  }, [appView, resizingPane, sidebarWidth]);
 
   async function deleteSelectedItems() {
     const ids = [...selectedItemIds];
@@ -5691,6 +5696,11 @@ export default function App() {
         </div>
 
       </aside>}
+
+      {appView === 'workbench' && !isDetailFocus && !isListFocus && <div className="pane-resizer pane-resizer-sidebar pane-resizer-workbench-left" onMouseDown={event => {
+        event.preventDefault();
+        setResizingPane('sidebar');
+      }} />}
 
       {(appView === 'library' || appView === 'workbench') && !isDetailFocus && !isListFocus && <div className="pane-resizer pane-resizer-list" onMouseDown={event => {
         event.preventDefault();
