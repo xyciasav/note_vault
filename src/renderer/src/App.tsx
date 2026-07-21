@@ -3207,6 +3207,7 @@ export default function App() {
   async function createNote() {
     if (!(await confirmSaveDirtyChanges())) return;
     try {
+      const targetView: AppView = appView === 'workbench' ? 'workbench' : 'library';
       setIsCreating(true);
       setStatus('Creating new note...');
 
@@ -3221,7 +3222,7 @@ export default function App() {
         throw new Error('No note was returned from the database.');
       }
 
-      setAppView('library');
+      setAppView(targetView);
       setSearch('');
       setTypeFilter('all');
       setItems(current => [item, ...current.filter(existing => existing.id !== item.id)]);
@@ -6942,6 +6943,19 @@ export default function App() {
                 <span className="list-eyebrow">Workbench</span>
                 <h2>Collections</h2>
                 <p>Classic three-pane view: pick a collection, choose an item, preview it.</p>
+              </div>
+
+              <div className="workbench-create-actions" aria-label="Workbench create and upload actions">
+                <button type="button" className="workbench-primary-action" onClick={createNote} disabled={isCreating}>
+                  <Plus size={16} /> {isCreating ? 'Creating...' : 'New Note'}
+                </button>
+                <label className="workbench-action-button">
+                  <Upload size={16} /> Upload Files
+                  <input type="file" multiple onChange={event => onFileInput(event, 'auto')} />
+                </label>
+                <button type="button" className="workbench-action-button" onClick={() => openFolderPicker('auto')}>
+                  <FolderOpen size={16} /> Add Folder
+                </button>
               </div>
 
               <div className="workbench-actions">

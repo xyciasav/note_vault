@@ -121,6 +121,38 @@ button, input, textarea { font: inherit; }
 }
 .workbench-panel-heading h2 { margin: 2px 0 4px; color: #f8fafc; font-size: 24px; line-height: 1.05; letter-spacing: -0.03em; }
 .workbench-panel-heading p { margin: 0; color: #94a3b8; font-size: 12px; line-height: 1.4; }
+.workbench-create-actions { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.workbench-primary-action,
+.workbench-action-button {
+  width: 100%;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 9px 10px;
+  background: #172033;
+  color: #dbeafe;
+  cursor: pointer;
+  font-weight: 850;
+  text-align: center;
+}
+.workbench-primary-action {
+  border-color: #3b82f6;
+  background: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 12px 22px rgba(37, 99, 235, .18);
+}
+.workbench-primary-action:hover:not(:disabled),
+.workbench-action-button:hover {
+  border-color: #60a5fa;
+  background: #1d4ed8;
+  color: #ffffff;
+}
+.workbench-primary-action:disabled { opacity: .66; cursor: not-allowed; }
+.workbench-action-button input { display: none; }
 .workbench-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .workbench-actions button,
 .workbench-collection-list button {
@@ -2223,10 +2255,23 @@ body {
 }
 
 .app-shell:not(.theme-dark) .workbench-actions button,
+.app-shell:not(.theme-dark) .workbench-action-button,
 .app-shell:not(.theme-dark) .workbench-collection-list button {
   background: rgba(255, 252, 247, .86);
   border-color: #d6c9b8;
   color: #123469;
+}
+
+.app-shell:not(.theme-dark) .workbench-primary-action {
+  background: #2563eb;
+  border-color: #3b82f6;
+  color: #ffffff;
+}
+
+.app-shell:not(.theme-dark) .workbench-action-button:hover {
+  background: #dbeafe;
+  border-color: #60a5fa;
+  color: #1d4ed8;
 }
 
 .app-shell:not(.theme-dark) .workbench-actions button.active,
